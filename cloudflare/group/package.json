@@ -1,0 +1,21 @@
+{
+  "name": "strikers-group",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8787 --config wrangler.local.toml",
+    "types": "wrangler types",
+    "check": "tsc --noEmit",
+    "test": "node --test --test-isolation=none test/unit.test.mjs",
+    "test:workerd": "node --test --test-isolation=none test/worker.test.mjs",
+    "admin": "node admin.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261104.0-beta",
+    "typescript": "5.9.3",
+    "wrangler": "4.158.0"
+  }
+}

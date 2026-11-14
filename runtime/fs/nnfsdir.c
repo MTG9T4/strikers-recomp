@@ -1,0 +1,235 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Upstream: smo-recomp/runtime/fs/nnfsdir.c (0414341471307605b8cb5d0c1a9928db5fe84e07).
+ * Adapted for Strikers; see docs/phase2-runtime.md. */
+/* nn::fs directory functions on host folders: OpenDirectory, ReadDirectory, CloseDirectory.
+ *
+ * nnfs.c has OpenDirectory as "path not found" and not the other two. A directory that is never found is wrong for
+ * save data the game has written itself, so OpenDirectory is REPLACED here (this file registers after nnfs.c) and
+ * the rest added.
+ * The mount-name mapping is the one documented at the top of nnfs.c and must stay identical to it:
+ *   rom   -> %STRIKERS_ROMFS% or ..\romfs,   any other mount -> ..\userdata\<mount name>
+ *
+ * [game] 0x71037c4360: OpenDirectory(&handle, path, 3); GetDirectoryEntryCount(&count, handle);
+ * allocates count * 0x310 bytes; ReadDirectory(&read, entries, handle, count); so DirectoryHandle is one
+ * 8-byte value passed in a register and sizeof(DirectoryEntry) = 0x310.
+ * [doc] nnheaders nn/fs: DirectoryEntry { char name[0x301]; char pad[3]; s8 type @0x304 (0 directory,
+ * 1 file); s64 fileSize @0x308 }; OpenDirectoryMode 1 = directories, 2 = files, 3 = all.
+ * Results (module 2): [doc] switchbrew: PathNotFound 2002-0001 (0x202) when the folder is missing; the generic
+ * failure nnfs.c uses (0x3e802) for a handle that is not an open directory. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <windows.h>
+#include "sdklift.h"
+
+#define A0 (c->x[0])
+#define A1 (c->x[1])
+#define A2 (c->x[2])
+#define A3 (c->x[3])
+#define RET(v) (c->x[0] = (uint64_t)(v))
+#define P(v) ((uint64_t)(uintptr_t)(v))
+
+#define RESULT_PATH_NOT_FOUND 0x202u
+#define RESULT_GENERIC_FAILURE 0x3e802u
+#define ENTRY_SIZE 0x310
+#define DIR_MAGIC 0x52494453u                             /* "SDIR" */
+
+typedef struct { char name[0x301]; int is_file; int64_t size; } HostEntry;
+typedef struct { uint32_t magic; int count, pos; HostEntry *entries; } HostDir;
+
+int fs_dir_roots(const char *guest, char roots[2][MAX_PATH], uint32_t *result);   /* nnfs.c: mount table + save data journal view */
+int fs_dir_hidden(const char *guest_dir, const char *name);
+int fs_pkg_dir(const char *guest, uint32_t *result);       /* nnfs.c: a directory of the RomFS read from the packages */
+int romfs_pkg_list(int dir, void (*each)(void *ctx, const char *name, int is_dir, uint64_t size), void *ctx);
+typedef struct { void *d; int cap, mode; } PkgList;
+int fs_rom_rel(const char *guest, char *rel);              /* nnfs.c */
+int mods_find(const char *rel, char *host, size_t n, int *is_dir);
+void mods_list(const char *rel, void (*each)(void *ctx, const char *name, int is_dir, unsigned long long size), void *ctx);
+
+static void pkg_entry(void *ctx, const char *name, int is_dir, uint64_t size) {
+    PkgList *l = (PkgList *)ctx;
+    HostDir *d = (HostDir *)l->d;
+    if (is_dir ? !(l->mode & 1) : !(l->mode & 2)) return;
+    if (d->count == l->cap) { l->cap = l->cap ? l->cap * 2 : 32; d->entries = realloc(d->entries, sizeof(HostEntry) * (size_t)l->cap); }
+    HostEntry *e = &d->entries[d->count++];
+    memset(e, 0, sizeof *e);
+    snprintf(e->name, sizeof e->name, "%s", name);
+    e->is_file = !is_dir;
+    e->size = is_dir ? 0 : (int64_t)size;
+}
+/* A mod's entries in a RomFS folder: the ones the folder does not have already (mods.c). */
+static void mod_entry(void *ctx, const char *name, int is_dir, unsigned long long size) {
+    PkgList *l = (PkgList *)ctx;
+    HostDir *d = (HostDir *)l->d;
+    for (int k = 0; k < d->count; k++) if (!_stricmp(d->entries[k].name, name)) return;
+    pkg_entry(ctx, name, is_dir, size);
+}
+static void fs_OpenDirectory(Ctx *c) {                    /* (DirectoryHandle *out, const char *path, int mode) -> Result */
+    uint64_t out = A0;
+    char modrel[MAX_PATH];
+    int rom = fs_rom_rel((const char *)(uintptr_t)A1, modrel), mod_dir = 0;
+    if (rom) mods_find(modrel, NULL, 0, &mod_dir);           /* a folder that some mod has */
+    int mode = (int)A2;
+    char roots[2][MAX_PATH], pattern[MAX_PATH + 4];
+    uint32_t result = 0;
+    if (out) wr64(out, 0);
+    {   /* the RomFS read from the packages: its own table */
+        int vd = fs_pkg_dir((const char *)(uintptr_t)A1, &result);
+        if (vd != -2) {
+            if (result && !mod_dir) { RET(result); return; }
+            HostDir *d = calloc(1, sizeof *d);
+            d->magic = DIR_MAGIC;
+            PkgList l = {d, 0, mode};
+            if (vd >= 0) romfs_pkg_list(vd, pkg_entry, &l);
+            if (rom) mods_list(modrel, mod_entry, &l);
+            trace_printf("     fs OpenDirectory \"%s\" mode %d -> %d entries (packages)\n", (const char *)(uintptr_t)A1, mode, d->count);
+            wr64(out, P(d));
+            RET(0);
+            return;
+        }
+        result = 0;
+    }
+    /* the folders that make up this directory: for journaled save data the working folder, then the committed one */
+    int nroots = fs_dir_roots((const char *)(uintptr_t)A1, roots, &result);
+    if (result && !(rom && mod_dir)) { RET(result); return; }
+    if (result) { result = 0; nroots = 0; }                  /* only a mod has this folder */
+    HostDir *d = calloc(1, sizeof *d);
+    int cap = 0;
+    d->magic = DIR_MAGIC;
+    for (int r = 0; r < nroots; r++) {
+        snprintf(pattern, sizeof pattern, "%s\\*", roots[r]);
+        WIN32_FIND_DATAW fd;
+        wchar_t wpattern[MAX_PATH + 4];
+        MultiByteToWideChar(CP_ACP, 0, pattern, -1, wpattern, MAX_PATH + 4);
+        HANDLE h = FindFirstFileW(wpattern, &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+            int is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0, dup = 0;
+            char name[0x301];
+            memset(name, 0, sizeof name);
+            if (!WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, name, 0x300, NULL, NULL)) continue;
+            if (r == nroots - 1 && nroots == 2) {            /* committed folder under a working folder: skip what the working state replaced or deleted */
+                char ansi[MAX_PATH];
+                WideCharToMultiByte(CP_ACP, 0, fd.cFileName, -1, ansi, sizeof ansi, NULL, NULL);
+                if (fs_dir_hidden((const char *)(uintptr_t)A1, ansi)) continue;
+            }
+            for (int k = 0; k < d->count && !dup; k++) dup = _stricmp(d->entries[k].name, name) == 0;
+            if (dup) continue;
+            if (is_dir ? !(mode & 1) : !(mode & 2)) {
+                if (nroots < 2) continue;                    /* still remembered (below) so the committed twin is not listed either */
+            }
+            if (d->count == cap) { cap = cap ? cap * 2 : 32; d->entries = realloc(d->entries, sizeof(HostEntry) * (size_t)cap); }
+            HostEntry *e = &d->entries[d->count];
+            memset(e, 0, sizeof *e);
+            memcpy(e->name, name, sizeof e->name);
+            e->is_file = !is_dir;
+            e->size = is_dir ? 0 : (int64_t)(((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow);
+            d->count++;
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    if (nroots == 2) {                                       /* drop the entries the open mode does not ask for */
+        int n = 0;
+        for (int k = 0; k < d->count; k++) if (d->entries[k].is_file ? (mode & 2) : (mode & 1)) d->entries[n++] = d->entries[k];
+        d->count = n;
+    }
+
+    if (rom) { PkgList l = {d, cap, mode}; mods_list(modrel, mod_entry, &l); cap = l.cap; }
+    trace_printf("     fs OpenDirectory \"%s\" mode %d -> %d entries\n", (const char *)(uintptr_t)A1, mode, d->count);
+    wr64(out, P(d));
+    RET(0);
+}
+static HostDir *dir_of(uint64_t handle) {
+    HostDir *d = (HostDir *)(uintptr_t)handle;
+    return handle > 0x10000 && d->magic == DIR_MAGIC ? d : NULL;
+}
+static void fs_ReadDirectory(Ctx *c) {                    /* (int64_t *outCount, DirectoryEntry *entries, DirectoryHandle, int64_t max) -> Result */
+    HostDir *d = dir_of(A2);
+    uint64_t out = A1;
+    int64_t max = (int64_t)A3, n = 0;
+    if (!d) { if (A0) wr64(A0, 0); RET(RESULT_GENERIC_FAILURE); return; }
+    while (n < max && d->pos < d->count) {
+        HostEntry *e = &d->entries[d->pos++];
+        uint8_t *g = (uint8_t *)(uintptr_t)(out + (uint64_t)n * ENTRY_SIZE);
+        memset(g, 0, ENTRY_SIZE);
+        memcpy(g, e->name, 0x301);
+        g[0x304] = (uint8_t)e->is_file;
+        memcpy(g + 0x308, &e->size, 8);
+        n++;
+    }
+    if (A0) wr64(A0, (uint64_t)n);
+    RET(0);
+}
+static void fs_CloseDirectory(Ctx *c) {                   /* (DirectoryHandle) */
+    HostDir *d = dir_of(A0);
+    if (d) { d->magic = 0; free(d->entries); free(d); }
+}
+
+static void fs_GetDirectoryEntryCount(Ctx *c) { HostDir *d=dir_of(A1); if(!d){RET(RESULT_GENERIC_FAILURE);return;} wr64(A0,(uint64_t)d->count); RET(0); }
+#define FS(n) "_ZN2nn2fs" n
+static const ImportDef fsdir_imports[] = {
+    {FS("22GetDirectoryEntryCountEPlNS0_15DirectoryHandleE"), fs_GetDirectoryEntryCount},
+    {FS("13OpenDirectoryEPNS0_15DirectoryHandleEPKci"), fs_OpenDirectory},
+    {FS("13ReadDirectoryEPlPNS0_14DirectoryEntryENS0_15DirectoryHandleEl"), fs_ReadDirectory},
+    {FS("14CloseDirectoryENS0_15DirectoryHandleE"), fs_CloseDirectory},
+};
+void register_nnfsdir_imports(void) {
+    int n = (int)(sizeof fsdir_imports / sizeof fsdir_imports[0]);
+    for (int i = 0; i < n; i++)
+        if (!import_data(fsdir_imports[i].name)) printf("nnfsdir: \"%s\" is not an import of the game (a typo, or a function it never calls)\n", fsdir_imports[i].name);
+    register_imports(fsdir_imports, n);
+}
+
+int nnfsdir_selftest(Ctx *c) {
+    /* a scratch mount under %TEMP% (never the user's save data): two files and one folder, listed with each mode */
+    int ok = 1;
+    char base[MAX_PATH], p[MAX_PATH];
+    uint32_t fs_mount_plain(const char *name, const char *host_dir);
+    GetTempPathA(MAX_PATH - 64, base);
+    snprintf(base + strlen(base), 64, "strikers_fsdir_selftest_%lu", (unsigned long)GetCurrentProcessId());
+    CreateDirectoryA(base, NULL);
+    snprintf(p, sizeof p, "%s\\d", base); CreateDirectoryA(p, NULL);
+    snprintf(p, sizeof p, "%s\\d\\sub", base); CreateDirectoryA(p, NULL);
+    snprintf(p, sizeof p, "%s\\d\\a.bin", base);
+    FILE *f = fopen(p, "wb"); if (f) { fwrite("12345", 1, 5, f); fclose(f); }
+    snprintf(p, sizeof p, "%s\\d\\b.bin", base);
+    f = fopen(p, "wb"); if (f) fclose(f);
+    ok = fs_mount_plain("sdkselftest", base) == 0;
+    static const int expect[4] = {0, 1, 2, 3};
+    for (int mode = 1; mode <= 3; mode++) {
+        uint64_t handle = 0;
+        int64_t got = -1;
+        uint8_t *entries = malloc(4 * ENTRY_SIZE + 16);
+        memset(entries, 0xee, 4 * ENTRY_SIZE + 16);
+        c->x[0] = P(&handle); c->x[1] = P("sdkselftest:/d"); c->x[2] = (uint64_t)mode; fs_OpenDirectory(c);
+        ok = ok && c->x[0] == 0 && handle;
+        c->x[0] = P(&got); c->x[1] = P(entries); c->x[2] = handle; c->x[3] = 4; fs_ReadDirectory(c);
+        ok = ok && c->x[0] == 0 && got == expect[mode];
+        for (int i = 0; i < got && ok; i++) {
+            const char *name = (const char *)entries + i * ENTRY_SIZE;
+            int is_file = entries[i * ENTRY_SIZE + 0x304];
+            int64_t size;
+            memcpy(&size, entries + i * ENTRY_SIZE + 0x308, 8);
+            if (!strcmp(name, "a.bin")) ok = is_file == 1 && size == 5;
+            else if (!strcmp(name, "b.bin")) ok = is_file == 1 && size == 0;
+            else if (!strcmp(name, "sub")) ok = is_file == 0;
+            else ok = 0;
+        }
+        for (int i = 0; i < 16; i++) if (entries[got * ENTRY_SIZE + i] != 0xee) ok = 0;
+        c->x[0] = P(&got); c->x[1] = P(entries); c->x[2] = handle; c->x[3] = 4; fs_ReadDirectory(c);
+        ok = ok && got == 0;                               /* the listing is consumed */
+        c->x[0] = handle; fs_CloseDirectory(c);
+        free(entries);
+    }
+    uint64_t handle = 1;
+    c->x[0] = P(&handle); c->x[1] = P("sdkselftest:/missing"); c->x[2] = 3; fs_OpenDirectory(c);
+    ok = ok && c->x[0] == RESULT_PATH_NOT_FOUND && handle == 0;
+    snprintf(p, sizeof p, "%s\\d\\a.bin", base); DeleteFileA(p);
+    snprintf(p, sizeof p, "%s\\d\\b.bin", base); DeleteFileA(p);
+    snprintf(p, sizeof p, "%s\\d\\sub", base); RemoveDirectoryA(p);
+    snprintf(p, sizeof p, "%s\\d", base); RemoveDirectoryA(p);
+    RemoveDirectoryA(base);
+    printf("  fs: OpenDirectory / ReadDirectory (modes 1, 2, 3; 0x310-byte entries): %s\n", ok ? "ok" : "FAILED");
+    return !ok;
+}

@@ -1,0 +1,15 @@
+{
+  "local_only": true,
+  "bind": "127.0.0.1",
+  "advertise": "127.0.0.1",
+  "auth_port": 10025,
+  "secure_port": 10026,
+  "nat_port": 10027,
+  "relay_port": 10028,
+  "tls_port": 443,
+  "tls_certificate": "build/online/pki02/server.pem",
+  "tls_key": "build/online/pki02/server.key",
+  "max_peers": 64,
+  "idle_seconds": 10,
+  "account_key": "build/online/account.key"
+}

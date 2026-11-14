@@ -1,0 +1,20 @@
+CREATE TABLE codes (
+ hash TEXT PRIMARY KEY, expires INTEGER NOT NULL, remaining INTEGER NOT NULL,
+ revoked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE players (
+ node TEXT PRIMARY KEY, name TEXT NOT NULL, credential TEXT NOT NULL,
+ code_hash TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+ removed INTEGER NOT NULL DEFAULT 0, lease INTEGER NOT NULL DEFAULT 0,
+ status TEXT NOT NULL DEFAULT 'online', last_seen INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE audit (
+ id TEXT PRIMARY KEY, at INTEGER NOT NULL, node TEXT NOT NULL,
+ action TEXT NOT NULL, outcome TEXT NOT NULL
+);
+CREATE TABLE limits (key TEXT PRIMARY KEY, until INTEGER NOT NULL, count INTEGER NOT NULL);
+CREATE TABLE invites (
+ id TEXT PRIMARY KEY, sender TEXT NOT NULL REFERENCES players(node),
+ recipient TEXT NOT NULL REFERENCES players(node), expires INTEGER NOT NULL
+);
+CREATE INDEX invites_recipient ON invites(recipient, expires);

@@ -1,0 +1,15 @@
+name = "strikers-group-local"
+main = "test/local.ts"
+compatibility_date = "2026-11-05"
+workers_dev = false
+[[d1_databases]]
+binding = "DB"
+database_name = "strikers-group-local"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations"
+# Public test fixtures, never credentials for a real service.
+[vars]
+GROUP_MODE = "adhoc"
+ZT_NETWORK = "ff61286137000000"
+ADMIN_TOKEN = "local-test-admin-only"
+CODE_PEPPER = "local-test-pepper-only"

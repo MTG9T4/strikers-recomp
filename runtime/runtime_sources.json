@@ -1,0 +1,169 @@
+{
+  "license": "GPL-3.0-or-later",
+  "products": {
+    "host": "strikers_native.exe",
+    "game": "strikers_game.dll",
+    "shader_compiler": "strikers_glslang.dll",
+    "opus": "libopus-0.dll",
+    "zerotier": "strikers_zt.dll"
+  },
+  "program_id": "010019401051C000",
+  "zerotier_build": {
+    "source": "deps/libzt",
+    "version": "1.8.10",
+    "compatibility_generator": "tools/audit/zt_sdk_build.py",
+    "configuration": "VS 2022 CMake Release /MD; Central HTTP API disabled; queued lwIP input; no installer targets"
+  },
+  "opus_build": {
+    "source": "deps/opus",
+    "version": "1.5.2",
+    "license": "BSD-3-Clause",
+    "source_lists": ["celt_sources.mk", "silk_sources.mk", "opus_sources.mk"],
+    "configuration": "MSVC portable float; no DNN, DRED or OSCE"
+  },
+  "host_sources": [
+    "runtime/audio/nnaudio.c",
+    "runtime/core/boot.c",
+    "runtime/core/bug_report.c",
+    "runtime/core/cheats.c",
+    "runtime/core/gamedll.c",
+    "runtime/core/hitch.c",
+    "runtime/core/hostrt.c",
+    "runtime/core/sdklift_rt.c",
+    "runtime/fs/nnfs.c",
+    "runtime/fs/nnfsdir.c",
+    "runtime/fs/mods.c",
+    "runtime/fs/romfs_pkg.c",
+    "runtime/fs/save_import.c",
+    "runtime/game/hooks.c",
+    "runtime/gfx/display.c",
+    "runtime/gfx/gfx_options.c",
+    "runtime/gfx/mx_translate.c",
+    "runtime/gfx/nvn_gl.c",
+    "runtime/gfx/nvn_handles.c",
+    "runtime/gfx/nvn_layout.c",
+    "runtime/gfx/nvn_misc.c",
+    "runtime/gfx/nvn_movie.c",
+    "runtime/gfx/nvn_stub.c",
+    "runtime/gfx/nvn_vk.c",
+    "runtime/gfx/pc_overlay.cpp",
+    "deps/imgui/imgui.cpp",
+    "deps/imgui/imgui_draw.cpp",
+    "deps/imgui/imgui_tables.cpp",
+    "deps/imgui/imgui_widgets.cpp",
+    "runtime/gfx/tex_decode.c",
+    "runtime/gfx/texrepl.c",
+    "runtime/input/nnhid.c",
+    "runtime/input/nnpad_sdl.c",
+    "runtime/libc/clib.c",
+    "runtime/libc/eh_resume.c",
+    "runtime/libc/libcxx.c",
+    "runtime/libc/nncxxlib.c",
+    "runtime/libc/nncxxrt.c",
+    "runtime/libc/nniostream.c",
+    "runtime/libc/nnlibc2.c",
+    "runtime/libc/nnunwind.c",
+    "runtime/os/nnmisc.c",
+    "runtime/os/nnsdk.c",
+    "runtime/os/nntime.c",
+    "runtime/os/os_threads.c",
+    "runtime/os/switch_services.c",
+    "runtime/services/mf_ffmpeg.c",
+    "runtime/services/network_policy.c",
+    "runtime/services/zt_transport.c",
+    "runtime/services/group_client.c",
+    "runtime/services/group_json.c",
+    "runtime/services/net_sim.c",
+    "runtime/services/nnaccount.c",
+    "runtime/services/nnalbum.c",
+    "runtime/services/nnapplet.c",
+    "runtime/services/nnfontll.c",
+    "runtime/services/nnfriends.c",
+    "runtime/services/nnldn.c",
+    "runtime/services/nnmovie.c",
+    "runtime/services/nnmovie_mf.c",
+    "runtime/services/nnnet.c",
+    "runtime/services/nnnifm.c",
+    "runtime/services/nnpl.c",
+    "runtime/services/nnprepo.c",
+    "runtime/services/nnservices.c",
+    "runtime/services/nnsocket.c",
+    "runtime/services/nnssl.c",
+    "runtime/os/main_imports.c",
+    "runtime/services/nnngc.c"
+  ],
+  "included_fragments": [
+    "runtime/gfx/nvn_vk_draw.c",
+    "runtime/gfx/nvn_vk_pipelines.c",
+    "runtime/gfx/nvn_vk_watchdog.c",
+    "runtime/gfx/fsr_present.inc",
+    "runtime/gfx/smaa_present.inc",
+    "runtime/gfx/hdr_present.inc",
+    "runtime/gfx/astc_gpu.inc",
+    "runtime/gfx/pc_capture.inc",
+    "runtime/gfx/pc_controls.inc"
+  ],
+  "game_dll_sources": [
+    "runtime/core/game_shim_eh.c"
+  ],
+  "game_dll_includes": [
+    "runtime/core/game_shim.c"
+  ],
+  "shader_dll_sources": [
+    "runtime/gfx/vk_glslang_shim.cpp"
+  ],
+  "shader_dll_alternative": [
+    "runtime/gfx/vk_shaderc_shim.c"
+  ],
+  "generated_host_sources": [
+    "build/gen/sdkdata.c",
+    "build/gen/sdklift_gen.c"
+  ],
+  "generated_headers": [
+    "build/gen/image.h",
+    "build/gen/sdklift_install.h"
+  ],
+  "host_libraries": [
+    "SDL3.lib",
+    "user32.lib",
+    "gdi32.lib",
+    "winmm.lib",
+    "mfplat.lib",
+    "mfreadwrite.lib",
+    "mfuuid.lib",
+    "ole32.lib",
+    "windowscodecs.lib",
+    "uuid.lib",
+    "shlwapi.lib",
+    "shell32.lib",
+    "advapi32.lib",
+    "ws2_32.lib",
+    "winhttp.lib",
+    "crypt32.lib",
+    "bcrypt.lib",
+    "opengl32.lib"
+  ],
+  "shader_libraries": [
+    "glslang.lib",
+    "glslang-default-resource-limits.lib",
+    "SPIRV.lib",
+    "MachineIndependent.lib",
+    "OSDependent.lib",
+    "GenericCodeGen.lib",
+    "SPIRV-Tools-opt.lib",
+    "SPIRV-Tools.lib"
+  ],
+  "host_defines": [
+    "fn_table=(*game_fn_table_p)",
+    "fn_table_count=(*game_fn_table_count_p)",
+    "dyn_syms=(*game_dyn_syms_p)",
+    "dyn_sym_count=(*game_dyn_sym_count_p)"
+  ],
+  "notes": [
+    "Do not compile Vulkan fragments separately.",
+    "Do not link both game shims or both shader DLL backends.",
+    "Generated host tables and real lifted game objects are required; no placeholder definitions are shipped.",
+    "MSVC C host includes host_cpu.h; translated CPU code keeps core/runtime.h and uses clang.",
+    "Optional FFmpeg: STRIKERS_ENABLE_FFMPEG=1 plus version-matched headers/DLLs; enabled branch untested and still uses upstream GNU typeof."
+  ]
+}

@@ -1,0 +1,16 @@
+PREPARATION ONLY. No rules were applied. Current probe binds localhost only.
+Do not enable forwarding/public access for this incomplete build.
+
+Future public host, after authenticated NEX/ticket/Pia services are complete:
+  ufw allow 443/tcp comment 'Strikers NEX TLS WebSocket'
+  ufw allow 10025:10028/udp comment 'Strikers NEX NAT and Pia relay'
+
+Future ZeroTier-only host: substitute the actual interface, overlay CIDR and
+server address; restrict both protocols to that interface/network:
+  ufw allow in on ztXXXXXXXX from 10.147.17.0/24 to 10.147.17.10 port 443 proto tcp
+  ufw allow in on ztXXXXXXXX from 10.147.17.0/24 to 10.147.17.10 port 10025:10028 proto udp
+
+Do not assume this grants Internet reachability through a CGNAT home uplink.
+Do not change default firewall policy or SSH rules as part of these examples.
+The systemd template independently restricts IP traffic to localhost; public or
+ZeroTier operation requires reviewed changes after the missing server is built.

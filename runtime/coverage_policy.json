@@ -1,0 +1,232 @@
+{
+  "description": "Static binding coverage; implemented is not a runtime/ABI certification. Dedicated offline files register last.",
+  "offline_files": [
+    "runtime/services/nnaccount.c",
+    "runtime/services/nnfriends.c",
+    "runtime/services/nnldn.c",
+    "runtime/services/nnsocket.c",
+    "runtime/services/nnnifm.c",
+    "runtime/services/nnssl.c",
+    "runtime/services/nnnet.c",
+    "runtime/services/nnprepo.c",
+    "runtime/services/nnngc.c"
+  ],
+  "missing_handlers": [
+    "throw_trap",
+    "ti_virtual_trap",
+    "stub",
+    "unimplemented"
+  ],
+  "symbols": {
+    "glslcCompile": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcCompilePreSpecialized": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcCompileSpecialized": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcFinalize": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcGetDefaultOptions": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcGetVersion": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcInitialize": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "glslcSetAllocator": {
+      "status": "offline",
+      "unbound_weak": true,
+      "reason": "Deliberately unbound weak symbol: GOT remains null; precompiled shaders use NVN."
+    },
+    "_ZN2nn3web19ShowOfflineHtmlPageEPNS0_26OfflineHtmlPageReturnValueERKNS0_22ShowOfflineHtmlPageArgE": {
+      "status": "offline",
+      "reason": "Offline applet returns EndButtonPressed; no browser is hosted."
+    },
+    "_ZN2nn2fs17MountAddOnContentEPKciPvm": {
+      "status": "offline",
+      "reason": "No add-on content installed: path-not-found Result; no content rights invented."
+    },
+    "_ZN2nn2fs31QueryMountAddOnContentCacheSizeEPmi": {
+      "status": "offline",
+      "reason": "No add-on content installed: path-not-found Result; no content rights invented."
+    }
+  },
+  "binding_order": [
+    {
+      "table": "runtime/core/boot.c:base_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/nnsdk.c:sdk_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/libcxx.c:cxx_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/os_threads.c:thread_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/os_threads.c:sev_all",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/os_threads.c:strikers_thread_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/gfx/nvn_stub.c:nvn_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/fs/nnfs.c:fs_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/clib.c:clib_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/nntime.c:time_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/input/nnhid.c:hid_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/gfx/display.c:vi_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnpl.c:pl_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnfontll.c:fontll_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnmovie.c:movie_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/nnmisc.c:replace_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/nnmisc.c:fill_imports",
+      "mode": "fill"
+    },
+    {
+      "table": "runtime/audio/nnaudio.c:audio_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnmovie_mf.c:movie_mf_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/nniostream.c:iostream_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/nncxxrt.c:cxxrt_replace",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/nncxxrt.c:cxxrt_fill",
+      "mode": "fill"
+    },
+    {
+      "table": "runtime/libc/nncxxlib.c:cxxlib_replace",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/libc/nncxxlib.c:cxxlib_fill",
+      "mode": "fill"
+    },
+    {
+      "table": "runtime/libc/nnlibc2.c:libc2_imports",
+      "mode": "fill"
+    },
+    {
+      "table": "runtime/services/nnapplet.c:applet_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnnet.c:net_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/fs/nnfsdir.c:fsdir_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "build/gen/sdklift_gen.c:sdk_install_names",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/switch_services.c:strikers_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/os/main_imports.c:main_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnngc.c:ngc_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnprepo.c:prepo_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnaccount.c:nnaccount_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnfriends.c:nnfriends_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnldn.c:nnldn_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnsocket.c:nnsocket_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnnifm.c:nnnifm_imports",
+      "mode": "replace"
+    },
+    {
+      "table": "runtime/services/nnssl.c:nnssl_imports",
+      "mode": "replace"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+# UNVALIDATED DRAFT: do not use as unattended soak acceptance.
+# Fresh-profile intro and main-menu transitions use observed movie events.
+# Existing production parser supports only movie and successful file-open events.
+wait movie
+300+12:Z
+800+12:Z
+1000+12:Z
+1350+12:Z
+1550+12:d
+1650+12:Z
+wait movie
+120+8:*
+450+12:Z
+750+12:Z
+1050+20:l
+1250+12:Z
+1700+30:l
+2100+12:Z
+2400+12:Z
+3000+12:Z
+3150+12:Z
+3450+12:V
+3600+12:Z
+3750+12:Z
+4050+12:V
+4200+12:Z
+4350+12:Z
+4650+12:V
+4800+12:Z
+4950+12:Z
+wait open:rom:/StadiumGlobal/Persistent.data
+600+8:*
+900+12:Z
+# Match-end statistics write, not an estimate of the length of the match.
+wait open:StrkrsSave:/strkrs.save
+120+8:*
+900+12:!
+1500+12:Z
+1800+12:Z
+2100+12:d
+2160+12:d
+2220+12:Z
+wait movie
+120+8:*
+# Append the next-match block only after a fresh-profile validation proves that
+# this exact movie event represents a ready main menu and not another screen.

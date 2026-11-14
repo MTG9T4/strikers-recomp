@@ -1,0 +1,30 @@
+# Preparation template ONLY. Not installed or started. Local protocol probe.
+# Create a dedicated user and local config/PKI only during an authorized deployment.
+[Unit]
+Description=Strikers localhost NEX protocol probe (online play incomplete)
+After=network.target
+
+[Service]
+Type=simple
+User=strikers-nex
+Group=strikers-nex
+WorkingDirectory=/opt/strikers-nex
+ExecStart=/usr/bin/python3 -m server.nex --config /etc/strikers-nex/config.local.json --log -
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

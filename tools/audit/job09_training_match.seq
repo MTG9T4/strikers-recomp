@@ -1,0 +1,28 @@
+# Fresh userdata: title -> notice -> welcome -> lesson menu -> Training Match.
+# Frame-based inputs, without game memory/address hooks.
+300+12:Z
+800+12:Z
+1000+12:Z
+1350+8:Z
+1550+8:Z
+1800+4:K
+1840+4:K
+1880+4:K
+1920+4:K
+1960+4:K
+2000+4:K
+2040+4:K
+2080+4:K
+2180+8:Z
+
+# Match-end statistics write (the same guest event as Quick Battle).
+# Offsets below restart at the event, independently of presentation rate.
+wait open:StrkrsSave:/strkrs.save
+120+8:*
+900+12:!
+1080+8:*
+1500+12:Z
+1680+8:*
+1800+8:K
+1920+12:Z
+2100+8:*

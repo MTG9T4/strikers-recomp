@@ -1,0 +1,13 @@
+# Intro-complete seed. Quick Battle -> Online Play through actual HID input.
+300+12:Z
+800+8:Z
+1000+8:*
+1100+8:Z
+1300+4:K
+1380+4:K
+1500+8:Z
+1800+8:*
+2400+8:*
+3500+8:*
+5000+8:*
+7000+8:*

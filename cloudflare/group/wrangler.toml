@@ -1,0 +1,31 @@
+name = "strikers-group"
+main = "src/index.ts"
+compatibility_date = "2026-11-05"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "strikers-group"
+# Replace only during the later organizer setup. No automatic provisioning.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.1
+
+[triggers]
+crons = ["17 4 * * *"]
+
+[vars]
+GROUP_MODE = "adhoc"
+ZT_NETWORK = "ff61286137000000"
+# Required secrets: ADMIN_TOKEN, CODE_PEPPER. Only central mode needs ZT_TOKEN.
+# Production has no mock switch, custom Central URL, or HTTP exception.
+
+# The in-game updater's files (tools/release/publish_update.py): served as they are, without the Worker.
+[assets]
+directory = "./release-assets"

@@ -1,0 +1,48 @@
+"""Where the build's files are (used by the tools, scripts and tests). Adapted from smo-recomp's tools/target.py.
+
+The game is Mario Strikers: Battle League (program 010019401051C000) with its update v393216 applied. Everything
+derived from your dump goes under build/:
+    build/dump/update/exefs   the program's modules (main, sdk, subsdk*, rtld, main.npdm), from the update
+    build/dump/update/romfs   the base RomFS with the update applied
+    build/dump/update/elf     ELF conversions of the modules
+    build/<the rest>          functions, lift, obj, gen, bin, run, ...
+"""
+import os
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROGRAM_ID = 0x010019401051C000
+UPDATE_ID = 0x010019401051C800
+UPDATE_VERSION = 393216                                 # the update package version this project builds against
+BUILD = os.path.join(REPO, 'build')
+DUMP = os.path.join(BUILD, 'dump', 'update')
+RUNTIME = os.path.join(REPO, 'runtime')
+# the host runtime's subsystem folders (runtime/<folder>); every one is an include directory of the runtime's code
+RUNTIME_DIRS = ['core', 'libc', 'os', 'fs', 'gfx', 'audio', 'input', 'services', 'game']
+
+
+def runtime(folder, name):
+    """A file of the host runtime, e.g. runtime('gfx', 'mx_translate.c')."""
+    return os.path.join(RUNTIME, folder, name)
+
+
+def runtime_includes():
+    """clang -I arguments for every runtime folder (the runtime's files include each other by bare name)."""
+    return [arg for d in RUNTIME_DIRS for arg in ('-I', os.path.join(RUNTIME, d))]
+
+
+def build(*parts):
+    """A path in the build folder."""
+    return os.path.join(BUILD, *parts)
+
+
+def elf(module):
+    """The converted module (main, sdk, subsdk0, rtld) of the program."""
+    return os.path.join(DUMP, 'elf', module + '.elf')
+
+
+def dump_version():
+    """The display version of the extracted program (from its control data), or None."""
+    p = os.path.join(DUMP, 'control.nacp')
+    if not os.path.isfile(p):
+        return None
+    return open(p, 'rb').read()[0x3060:0x3070].split(b'\0')[0].decode('ascii', 'replace')

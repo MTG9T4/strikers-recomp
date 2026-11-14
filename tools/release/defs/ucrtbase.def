@@ -1,0 +1,20 @@
+LIBRARY ucrtbase.dll
+EXPORTS
+memcpy
+memmove
+memset
+memcmp
+sqrt
+sqrtf
+fabs
+trunc
+truncf
+ldexp
+fma
+fmaf
+floor
+floorf
+ceil
+ceilf
+rint
+rintf

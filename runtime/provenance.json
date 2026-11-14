@@ -1,0 +1,518 @@
+{
+  "license": "GPL-3.0-or-later",
+  "group_service": {
+    "implementation": "Project-authored cloudflare/group/src/index.ts and runtime/services/group_client.c, group_json.c",
+    "transport": "Windows WinHTTP certificate validation, no redirects; DPAPI user-scoped local credentials; loopback HTTP only in separately compiled audit host",
+    "development_dependencies": "Pinned only in cloudflare/group/package.json and package-lock.json; never linked into the game",
+    "central_api": "Legacy Central v1 fixed HTTPS member endpoint; organizer ZT_TOKEN and ZT_NETWORK are Worker secrets",
+    "status": "No deployment, accounts, or real Central/Cloudflare API calls; workerd acceptance blocked by local Node spawn EPERM"
+  },
+  "upstream_revisions": {
+    "smo-recomp": "0414341471307605b8cb5d0c1a9928db5fe84e07",
+    "ssbu-recomp": "de221d22f867406b4204dbd580404f603ee19b1a"
+  },
+  "files": [
+    {
+      "file": "build/bin/libopus-0.dll",
+      "upstream": "Xiph libopus 1.5.2, deps/opus; https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz",
+      "source_archive_sha256": "65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1",
+      "license": "BSD-3-Clause",
+      "license_file": "deps/opus/COPYING",
+      "change": "Unmodified release sources; MSVC portable float DLL built from release makefile source groups by tools/lifter/build_exe.py. No DNN, DRED or OSCE. License copied beside the DLL."
+    },
+    {
+      "file": "runtime/gfx/nvn_movie.c",
+      "upstream": "Strikers project code; target subsdk0 movie native-texture ABI",
+      "license": "GPL-3.0-or-later",
+      "change": "Format-3 NV12 colour conversion and native NVNtexture upload using the existing synchronous render queue; no game address hook."
+    },
+    {
+      "file": "runtime/audio/nnaudio.c",
+      "upstream": "ssbu-recomp/runtime/nnaudio.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash waveOut AudioOut, device query/notification and imported Opus decoder; target no-event overload/state/channel query; rollback marks removed; Opus absence fails initialization."
+    },
+    {
+      "file": "runtime/core/boot.c",
+      "upstream": "smo-recomp/runtime/core/boot.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers registration/startup; explicit MSVC DLL binding, offline services last, no fast/stage hooks. Job 06: target SDK data mapped before main relocations; real per-image relocation boundaries; new host/offline registrations."
+    },
+    {
+      "file": "runtime/core/fpexact.h",
+      "upstream": "Pre-existing job 02/03 CPU header (not edited by this job)",
+      "change": "Owned by job 03; preserved. MSVC host uses the separate checked ABI adapter."
+    },
+    {
+      "file": "runtime/core/game_shim.c",
+      "upstream": "smo-recomp/runtime/core/game_shim.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers DLL bridge; six host callbacks and lifted tables."
+    },
+    {
+      "file": "runtime/core/game_shim_eh.c",
+      "upstream": "ssbu-recomp/runtime/game_shim_eh.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash resume-table export and catch-call forwarding; required game DLL shim."
+    },
+    {
+      "file": "runtime/core/gamedll.c",
+      "upstream": "smo-recomp/runtime/core/gamedll.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Explicit strikers_bind_game before registration; GNU constructor removed."
+    },
+    {
+      "file": "runtime/core/hitch.c",
+      "upstream": "smo-recomp/runtime/core/hitch.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/core/host_cpu.h",
+      "upstream": "smo-recomp/runtime/core/runtime.h; Ctx matches the job 02/03 header",
+      "change": "New ABI-only MSVC adapter; exact Ctx/declaration equality checked before compile. No emulated CPU arithmetic is substituted."
+    },
+    {
+      "file": "runtime/core/hostrt.c",
+      "upstream": "smo-recomp/runtime/core/hostrt.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers diagnostics/product prefix; game hooks removed; missing imports trap; weak imports remain null. Job 06: explicit SVC dispatch and active-context exchange for fiber switches."
+    },
+    {
+      "file": "runtime/core/hostrt.h",
+      "upstream": "smo-recomp/runtime/core/hostrt.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers program ID; generated target image header retained."
+    },
+    {
+      "file": "runtime/core/neon.h",
+      "upstream": "Pre-existing job 02/03 CPU header (not edited by this job)",
+      "change": "Owned by job 03; preserved. MSVC host uses the separate checked ABI adapter."
+    },
+    {
+      "file": "runtime/core/runtime.h",
+      "upstream": "Pre-existing job 02/03 CPU header (not edited by this job)",
+      "change": "Owned by job 03; preserved. MSVC host uses the separate checked ABI adapter."
+    },
+    {
+      "file": "runtime/core/sdklift.h",
+      "upstream": "smo-recomp/runtime/core/sdklift.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/core/sdklift_rt.c",
+      "upstream": "smo-recomp/runtime/core/sdklift_rt.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers SDK ELF environment and loader; no game-specific SDK audio bridge. Job 06: exact target imported data mapping, per-image relocation boundaries, C/non-nn lifted roots and internal host callee lookup."
+    },
+    {
+      "file": "runtime/coverage_policy.json",
+      "upstream": "Strikers project code/metadata",
+      "change": "Project explicit offline/missing policies and checked-in boot table registration order."
+    },
+    {
+      "file": "runtime/fs/nnfs.c",
+      "upstream": "smo-recomp/runtime/fs/nnfs.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers paths/prefix; actual Commit/ReadFile overload/allocator/priority/save-existence bindings; unavailable add-on content."
+    },
+    {
+      "file": "runtime/fs/nnfsdir.c",
+      "upstream": "smo-recomp/runtime/fs/nnfsdir.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Host directories plus GetDirectoryEntryCount."
+    },
+    {
+      "file": "runtime/game/hooks.c",
+      "upstream": "Strikers project code/metadata",
+      "change": "Project-authored explicit no-op hooks only."
+    },
+    {
+      "file": "runtime/gfx/display.c",
+      "upstream": "smo-recomp/runtime/gfx/display.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers window/title/capture; Odyssey Help/amiibo window hooks removed; MSVC platform headers."
+    },
+    {
+      "file": "runtime/gfx/gfx_options.c",
+      "upstream": "smo-recomp/runtime/gfx/gfx_options.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers environment/config names; default native resolution scale."
+    },
+    {
+      "file": "runtime/gfx/gfx_options.h",
+      "upstream": "smo-recomp/runtime/gfx/gfx_options.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/mx_ops.h",
+      "upstream": "smo-recomp/runtime/gfx/mx_ops.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/mx_translate.c",
+      "upstream": "smo-recomp/runtime/gfx/mx_translate.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/mx_translate.h",
+      "upstream": "smo-recomp/runtime/gfx/mx_translate.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_front.h",
+      "upstream": "smo-recomp/runtime/gfx/nvn_front.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_gl.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_gl.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Coherent Odyssey NVN front end retained; game-menu integration removed; Strikers names."
+    },
+    {
+      "file": "runtime/gfx/nvn_handles.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_handles.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_handles.h",
+      "upstream": "smo-recomp/runtime/gfx/nvn_handles.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_layout.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_layout.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_misc.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_misc.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_misc.h",
+      "upstream": "smo-recomp/runtime/gfx/nvn_misc.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_sdk.h",
+      "upstream": "smo-recomp/runtime/gfx/nvn_sdk.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_stub.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_stub.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_vk.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_vk.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/nvn_vk_draw.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_vk_draw.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Odyssey Vulkan replay retained; game-menu code removed; native scale unless explicitly experimental."
+    },
+    {
+      "file": "runtime/gfx/nvn_vk_pipelines.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_vk_pipelines.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers shader DLL entry points and environment namespace; worker/cache infrastructure retained."
+    },
+    {
+      "file": "runtime/gfx/nvn_vk_watchdog.c",
+      "upstream": "smo-recomp/runtime/gfx/nvn_vk_watchdog.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/tex_decode.c",
+      "upstream": "smo-recomp/runtime/gfx/tex_decode.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/tex_decode.h",
+      "upstream": "smo-recomp/runtime/gfx/tex_decode.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/gfx/vk_glslang_shim.cpp",
+      "upstream": "ssbu-recomp/runtime/vk_glslang_shim.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash glslang C interface, compiled as MSVC C++ with unmangled C exports for Strikers DLL."
+    },
+    {
+      "file": "runtime/gfx/vk_shaderc_shim.c",
+      "upstream": "smo-recomp/runtime/gfx/vk_shaderc_shim.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Retargeted optional alternative shaderc DLL backend; do not link with glslang backend."
+    },
+    {
+      "file": "runtime/input/nnhid.c",
+      "upstream": "smo-recomp/runtime/input/nnhid.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Game-state/actor/amiibo scripting removed; normal input and timed scripts retained; actual single-state and controller query APIs added."
+    },
+    {
+      "file": "runtime/input/nnpad.h",
+      "upstream": "smo-recomp/runtime/input/nnpad.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/input/nnpad_sdl.c",
+      "upstream": "smo-recomp/runtime/input/nnpad_sdl.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Strikers controller config; amiibo hotkeys/tests removed; SDL input path retained."
+    },
+    {
+      "file": "runtime/libc/clib.c",
+      "upstream": "smo-recomp/runtime/libc/clib.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Guest varargs preserved; additional actual Strikers C imports/math/printf/time/memset_s and TSNPrintf."
+    },
+    {
+      "file": "runtime/libc/eh_resume.c",
+      "upstream": "Project code; contract from ssbu-recomp/runtime/nnunwind.c",
+      "change": "New generic sorted resume-table registry, replacing the Smash/NRO loader dependency."
+    },
+    {
+      "file": "runtime/libc/eh_runtime.h",
+      "upstream": "smo-recomp/runtime/libc/eh_runtime.h (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Stable exception interface plus generic image resume-table registration contract."
+    },
+    {
+      "file": "runtime/libc/libcxx.c",
+      "upstream": "smo-recomp/runtime/libc/libcxx.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Generated allocators and Strikers prefix; Smash cxx_string_data accessor for exception strings."
+    },
+    {
+      "file": "runtime/libc/nncxxlib.c",
+      "upstream": "smo-recomp/runtime/libc/nncxxlib.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/libc/nncxxrt.c",
+      "upstream": "ssbu-recomp/runtime/nncxxrt.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash complete Itanium ABI binding set and main resume binding; target image size; strict resume-table checks; game self-test omitted."
+    },
+    {
+      "file": "runtime/libc/nniostream.c",
+      "upstream": "smo-recomp/runtime/libc/nniostream.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/libc/nnlibc2.c",
+      "upstream": "smo-recomp/runtime/libc/nnlibc2.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Two-word binary128 conversions for MSVC, nearest-even rounding; standard streams/calendar preserved."
+    },
+    {
+      "file": "runtime/libc/nnunwind.c",
+      "upstream": "smo-recomp/runtime/libc/nnunwind.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Guest CFI/LSDA walker and catch wrappers; generic resume lookup; missing cleanups terminate instead of being skipped."
+    },
+    {
+      "file": "runtime/os/nnmisc.c",
+      "upstream": "smo-recomp/runtime/os/nnmisc.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Small host services; Smash ErrorResultVariant layout and actual target bindings; Strikers prefix."
+    },
+    {
+      "file": "runtime/os/nnsdk.c",
+      "upstream": "smo-recomp/runtime/os/nnsdk.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/os/nntime.c",
+      "upstream": "ssbu-recomp/runtime/nntime.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash expanded time-zone/snapshot service; no fixed-match-clock hook; target imported constructors/getters."
+    },
+    {
+      "file": "runtime/os/os_threads.c",
+      "upstream": "smo-recomp/runtime/os/os_threads.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Odyssey scheduling/thread/event core plus actual Strikers aliases, busy mutex and semaphore handlers; fibers/multiwait remain missing. Job 06: SDK 13.3 fibers with independent Ctx/FLS, periodic timers, event multiwait and five SVC dispatch paths."
+    },
+    {
+      "file": "runtime/os/switch_services.c",
+      "upstream": "smo-recomp/runtime/os/smo_nn.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Renamed smo_nn.c; Strikers prefix, heap/memory/OE service core; SDK AudioRenderer registration removed."
+    },
+    {
+      "file": "runtime/provenance.json",
+      "upstream": "Strikers project code/metadata",
+      "change": "Project file-by-file source and adaptation ledger."
+    },
+    {
+      "file": "runtime/README.md",
+      "upstream": "Strikers project code/metadata",
+      "change": "Project integration instructions and measured limits."
+    },
+    {
+      "file": "runtime/runtime_sources.json",
+      "upstream": "Strikers project code/metadata",
+      "change": "Project source/library/product/generated-input manifest for pipeline owner."
+    },
+    {
+      "file": "runtime/services/mf_ffmpeg.c",
+      "upstream": "ssbu-recomp/runtime/mf_ffmpeg.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Optional Smash dynamic FFmpeg fallback, off by default; no FFmpeg dependency in verified MSVC build."
+    },
+    {
+      "file": "runtime/services/mf_ffmpeg.h",
+      "upstream": "ssbu-recomp/runtime/mf_ffmpeg.h (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Optional tagged COM-like fallback dispatch interface."
+    },
+    {
+      "file": "runtime/services/network_policy.c",
+      "upstream": "Strikers project code/metadata",
+      "change": "New final offline registration boundary and explicit future network module callback switch."
+    },
+    {
+      "file": "runtime/services/network_policy.h",
+      "upstream": "Strikers project code/metadata",
+      "change": "New offline policy and replacement-module API."
+    },
+    {
+      "file": "runtime/services/nnaccount.c",
+      "upstream": "smo-recomp/runtime/fs/nnfs.c and runtime/services/nnonline.inc",
+      "change": "Dedicated offline local account, nickname, unavailable login/token and async answers."
+    },
+    {
+      "file": "runtime/services/nnalbum.c",
+      "upstream": "smo-recomp/runtime/services/nnalbum.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/services/nnapplet.c",
+      "upstream": "strikers-recomp/runtime/services/nnapplet.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable software keyboard and volume; offline web-close response; no Odyssey Help or NFC implementation."
+    },
+    {
+      "file": "runtime/services/nnfontll.c",
+      "upstream": "smo-recomp/runtime/services/nnfontll.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/services/nnfriends.c",
+      "upstream": "smo-recomp/runtime/services/nnonline.inc",
+      "change": "Dedicated empty friend list/profile and unavailable async requests."
+    },
+    {
+      "file": "runtime/services/nnldn.c",
+      "upstream": "ssbu-recomp/runtime/nnnet_c4a.inc",
+      "change": "Dedicated wireless-disabled model and pure address helpers; no lobby/AP transport."
+    },
+    {
+      "file": "runtime/services/nnmovie.c",
+      "upstream": "smo-recomp/runtime/services/nnmovie.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/services/nnmovie_mf.c",
+      "upstream": "ssbu-recomp/runtime/nnmovie_mf.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash Media Foundation and optional FFmpeg hooks; direct target Extractor methods; generated free symbol; game addresses/Flush/rollback/menu hooks removed."
+    },
+    {
+      "file": "runtime/services/nnnet.c",
+      "upstream": "smo-recomp/runtime/services/nnnet.c; services/nnsocket.inc (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Offline NSD identity answer and empty DLC list; weak glslc imports deliberately unbound."
+    },
+    {
+      "file": "runtime/services/nnnifm.c",
+      "upstream": "smo-recomp/runtime/services/nnsocket.inc",
+      "change": "Dedicated disconnected availability, zero IP/no proxy and request rejection."
+    },
+    {
+      "file": "runtime/services/nnpl.c",
+      "upstream": "smo-recomp/runtime/services/nnpl.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Portable upstream subsystem retained; Strikers environment/config/product names and host_cpu.h includes where applicable."
+    },
+    {
+      "file": "runtime/services/nnprepo.c",
+      "upstream": "smo-recomp/runtime/os/nnmisc.c; ssbu-recomp/runtime/nnmisc.c",
+      "change": "All actual imported report operations deliberately accepted/discarded; no telemetry retained or transmitted."
+    },
+    {
+      "file": "runtime/services/nnservices.c",
+      "upstream": "smo-recomp/runtime/services/nnservices.c (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Small target registration orchestrator; no upstream game JPEG fixtures or presumed SDK success."
+    },
+    {
+      "file": "runtime/services/nnsocket.c",
+      "upstream": "smo-recomp/runtime/services/nnsocket.inc",
+      "change": "Dedicated socket/DNS refusal and pure address functions; no host sockets including loopback."
+    },
+    {
+      "file": "runtime/services/nnssl.c",
+      "upstream": "smo-recomp/runtime/services/nnsocket.inc (0414341471307605b8cb5d0c1a9928db5fe84e07)",
+      "change": "Dedicated offline SSL object lifecycle; no socket attachment or TLS handshake."
+    },
+    {
+      "file": "runtime/services/plat/mfapi.h",
+      "upstream": "ssbu-recomp/runtime/plat/mfapi.h (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Optional FFmpeg MF subset declarations; native MF path keeps Windows SDK headers."
+    },
+    {
+      "file": "runtime/services/plat_mf.inc",
+      "upstream": "ssbu-recomp/runtime/plat_mf.c (de221d22f867406b4204dbd580404f603ee19b1a)",
+      "change": "Smash FFmpeg media implementation included only by optional mf_ffmpeg.c, never standalone."
+    },
+    {
+      "file": "runtime/os/main_imports.c",
+      "upstream": "Strikers project code; target SDK 13.3 disassembly",
+      "change": "Host entropy, address reservations/commit/free, memory summaries, language tags, exit sections, RO ranges, empty VI history and host CRT DSO boundary."
+    },
+    {
+      "file": "runtime/services/nnngc.c",
+      "upstream": "Strikers project code; target SDK 13.3 disassembly",
+      "change": "Explicit unavailable profanity dictionary, with target uninitialized and invalid-buffer Result values; no fake clean verdict."
+    }
+  ],
+  "fsr1": [
+    {
+      "file": "runtime/gfx/fsr/ffx_a.h",
+      "upstream": "https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/a21ffb8f6c13233ba336352bdff293894c706575/ffx-fsr/ffx_a.h",
+      "commit": "a21ffb8f6c13233ba336352bdff293894c706575",
+      "sha256": "f60e2722fcd13989523b9164d776ab382b3692791767f3bf8bb19967f763f3fb",
+      "license": "MIT"
+    },
+    {
+      "file": "runtime/gfx/fsr/ffx_fsr1.h",
+      "upstream": "https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/a21ffb8f6c13233ba336352bdff293894c706575/ffx-fsr/ffx_fsr1.h",
+      "commit": "a21ffb8f6c13233ba336352bdff293894c706575",
+      "sha256": "93c3922362ea7fc99cbcc698ca30c98de4f8c246d1fbb0b09e015ddef38ce3a5",
+      "license": "MIT"
+    },
+    {
+      "file": "runtime/gfx/fsr/LICENSE.txt",
+      "upstream": "https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/a21ffb8f6c13233ba336352bdff293894c706575/license.txt",
+      "commit": "a21ffb8f6c13233ba336352bdff293894c706575",
+      "sha256": "db089274ce766da70f5b7d791029c3486f9f9e27c8c79c652689603d3192e802",
+      "license": "MIT"
+    }
+  ],
+  "zerotier_build": {
+    "artifact": "build/bin/strikers_zt.dll",
+    "generator": "tools/audit/zt_sdk_build.py",
+    "adapted_sources": ["src/NodeService.cpp", "src/VirtualTap.cpp", "src/lwipopts.h"],
+    "adaptation_hash_record": "build/libzt/adaptations.json",
+    "additional_notices": [
+      "deps/libzt/ext/ZeroTierOne/ext/miniupnpc/LICENSE",
+      "deps/libzt/ext/ZeroTierOne/ext/libnatpmp/LICENSE",
+      "deps/libzt/ext/lwip-contrib/ports/win32/sys_arch.c"
+    ]
+  },
+  "zerotier_dependencies": [
+    {
+      "name": "libzt",
+      "commit": "a6f6886a8c8c07249f9e5d0cae431848727fe845",
+      "source_archive_sha256": "3e12160ff8ce9ec835cca6f17db73cf4f8e783ec3aac0423e52900b058b635a4",
+      "license": "Apache-2.0",
+      "license_file": "deps/libzt/LICENSE.txt",
+      "notes": "BSL-1.1 Change Date 2026-01-01; Change License Apache-2.0."
+    },
+    {
+      "name": "ZeroTierOne",
+      "commit": "a47c3cb16f1c16bc9be555fd7f6bcd34e843f001",
+      "source_archive_sha256": "080984fcc9fd94565721706136f4e1c75b959a57183a89bff23fe67ed22ade84",
+      "license": "Apache-2.0",
+      "license_file": "deps/libzt/ext/ZeroTierOne/LICENSE.txt",
+      "notes": "BSL-1.1 Change Date 2025-01-01; Change License Apache-2.0."
+    },
+    {
+      "name": "lwip",
+      "commit": "32708c0a8b140efb545cc35101ee5fdeca6d6489",
+      "source_archive_sha256": "018afe8ef6e508e557037dcd32acc7ed5620daed29dca74ef6556a9d5e602ea9",
+      "license": "BSD-3-Clause",
+      "license_file": "deps/libzt/ext/lwip/COPYING",
+      "notes": "Pinned libzt submodule."
+    },
+    {
+      "name": "lwip-contrib",
+      "commit": "4fd612c9c72dfcd1db6618bd59c1a17d9f5b55f8",
+      "source_archive_sha256": "c025ba3d469f79c98e34aaaac491c229f8a8c54b6e3d892d83953b40a12637a1",
+      "license": "BSD-3-Clause",
+      "license_file": "deps/libzt/ext/lwip-contrib/ports/win32/sys_arch.c",
+      "notes": "Pinned libzt submodule; license in source header."
+    }
+  ]
+}

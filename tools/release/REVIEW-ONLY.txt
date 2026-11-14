@@ -1,0 +1,11 @@
+PHASE 8 DEVELOPER REVIEW — NOT A PLAYER RELEASE
+
+This archive contains only the setup/packaging/crash-monitor work for review.
+It has no game, no host, no game DLL, no assets and no keys. Setup deliberately
+refuses to run without a verified release manifest. Do not send this to players
+as a working game installer. Read docs/phase8-installer.md in the source tree.
+
+The ordinary developer host embeds SDK code/data generated from the game.
+Use the separate release-host builder and locally built strikers_game.dll and
+strikers_sdk.dll; never distribute those derived DLLs. Embedded-Python
+download/setup, licensing/source and two-hour soak acceptance must pass.

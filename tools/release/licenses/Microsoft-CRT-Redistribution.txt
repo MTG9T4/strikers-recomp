@@ -1,0 +1,37 @@
+Microsoft Visual C++ runtime distribution inventory (Job 21, 2026-11-05)
+
+Copyright (c) Microsoft Corporation. All rights reserved.
+Microsoft runtime files are separately licensed; the project's GPL does not
+relicense them. Keep all embedded Microsoft notices intact and distribute the
+files unmodified with the program, never as a standalone runtime offering.
+
+Application-local runtime, VC143 x64 14.44.35112, from the licensed developer
+installation's VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT directory:
+concrt140.dll, msvcp140.dll, msvcp140_1.dll, msvcp140_2.dll,
+msvcp140_atomic_wait.dll, msvcp140_codecvt_ids.dll, vcruntime140.dll,
+vcruntime140_1.dll, vcruntime140_threads.dll (only files actually present in the hashed
+runtime-provenance inventory are shipped).
+
+LLVM 9's official Windows installer also includes older, unmodified x64
+concrt140.dll, msvcp140.dll and vcruntime140.dll in its bin directory. Their
+individual hashes are recorded in toolchain-provenance.json; they are not
+silently treated as the same version as the application-local VC143 files.
+
+Microsoft's Visual Studio 2022 Distributable Code list permits the files under
+VC/redist, subject to the applicable Visual Studio license, and explicitly
+excludes debug_nonredist and onecore/debug_nonredist. No debug CRT, compiler,
+Windows SDK or Build Tools executable is included in the player payload.
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+
+Distribution is subject to the distributor's valid Visual Studio license and
+its Distributable Code conditions. Preserve notices, add a valid copyright
+notice to the program, and provide the required downstream protections for
+Microsoft. This inventory does not grant rights or replace those terms.
+The runtime end-user EULA is not itself a grant of redistribution rights.
+https://visualstudio.microsoft.com/license-terms/vs2022-ga-diagnosticbuildtools/
+https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+
+The local vc_redist.x64.exe was extracted without executing it. Its English
+Cpp_2015-2022_ENU.1033 EULA is retained separately as Microsoft-CRT-EULA.rtf.
+Release gate: the controlling distributor terms and LLVM-bundled CRT grant
+must still be retained/verified before certifying notice/source completeness.

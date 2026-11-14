@@ -1,0 +1,71 @@
+# Rules for tools/lifter/sdklift.py (Strikers 1.3.2, NintendoSDK 13.3.0). Format and the generic rules are adapted from
+# smo-recomp's sdklift_rules.txt (GPL-3.0-or-later). No addresses and no code: only which SDK functions to lift and
+# where to stop. Rule kinds are documented in tools/lifter/sdklift.py (family, rootall, ctors, ctorsdata, datafuncs,
+# root, cut, wrap, trap, lift).
+#
+# Audio: Strikers imports only AudioOut (Wwise mixes in software), which the host implements (runtime/audio). Unlike
+# Odyssey, nothing of nn::audio is lifted from the SDK.
+
+# system events: host model shared through handles (runtime/os/os_threads.c sev_*), for game and lifted SDK alike
+cut _ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb
+cut _ZN2nn2os17AttachSystemEventEPNS0_15SystemEventTypeEjbjbNS0_14EventClearModeE
+cut _ZN2nn2os33AttachReadableHandleToSystemEventEPNS0_15SystemEventTypeEjbNS0_14EventClearModeE
+cut _ZN2nn2os33AttachWritableHandleToSystemEventEPNS0_15SystemEventTypeEjbNS0_14EventClearModeE
+cut _ZN2nn2os33DetachReadableHandleOfSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os33DetachWritableHandleOfSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os15WaitSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os18TryWaitSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os20TimedWaitSystemEventEPNS0_15SystemEventTypeENS_8TimeSpanE
+cut _ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os16ClearSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os30GetReadableHandleOfSystemEventEPKNS0_15SystemEventTypeE
+cut _ZN2nn2os30GetWritableHandleOfSystemEventEPKNS0_15SystemEventTypeE
+cut _ZN2nn2os30GetReadableHandleOfSystemEventEPNS0_15SystemEventTypeE
+cut _ZN2nn2os30GetWritableHandleOfSystemEventEPNS0_15SystemEventTypeE
+
+# nn::hid vibration graph (Node / Mixer / Target / Player / NodeConnection / FileParser): SDK code that mixes vibration
+# values in software. Strikers imports 31 of these. The device side below it is cut.
+family ^_ZNK?2nn3hid[0-9]+Vibration(Node|Mixer|Target|Writer|Player|NodeConnection|FileParser)
+rootall ^_ZNK?2nn3hid[0-9]+Vibration(Node|Mixer|Target|Writer|Player|NodeConnection|FileParser)
+datafuncs ^_ZTVN2nn3hid[0-9]+Vibration
+cut _ZN2nn3hid6detail19SendVibrationValuesEPKNS0_21VibrationDeviceHandleEPKNS0_14VibrationValueEi
+
+# nn::hid handle getters: pure functions of (npad id, style set), lifted as they are
+family ^_ZN2nn3hid23GetSixAxisSensorHandlesEPNS0_19SixAxisSensorHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE$
+family ^_ZN2nn3hid25GetVibrationDeviceHandlesEPNS0_21VibrationDeviceHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE$
+
+# nn::util pure functions over guest memory: NintendoWare binary file helpers (Relocate with Unrelocate, so one undoes
+# exactly what the other did), UTF-8 / UTF-16 / UTF-32 conversions, deflate (the SDK's zlib), UUIDs come from the host
+family ^_ZN2nn4util15RelocationTable(8Relocate|10Unrelocate)Ev$
+family ^_ZNK?2nn4util16BinaryFileHeader
+family ^_ZN2nn4util(30ConvertString|27ConvertCharacter|30PickOutCharacter)
+family ^_ZN2nn4util1[57](Compress|Decompress)Deflate
+
+# nn::web: the offline page's argument (TLV writers) and return value (readers); ShowOfflineHtmlPage itself is the
+# host's (runtime/services/nnapplet.c)
+family ^_ZNK?2nn3web(22ShowOfflineHtmlPageArg|26OfflineHtmlPageReturnValue)
+
+# Job 06: pure SDK 13.3 helpers; service/entropy boundaries stay on the host.
+root _ZN2nn3hid20ControllerSupportArg10SetDefaultEv
+root _ZNK2nn3hid18SixAxisSensorState13GetQuaternionEPNS_4util4neon12Vector4fTypeE
+root _ZN2nn4util8BitArray5resetEv
+root _ZN2nn4util12GenerateUuidEv
+cut _ZN2nn6crypto36GenerateCryptographicallyRandomBytesEPvm
+root vswprintf
+root _ZNK2nn4util17BinaryBlockHeader12GetNextBlockEv
+root _ZNSt3__16__sortIRNS_6__lessIiiEEPiEEvT0_S5_T_
+family ^_ZN2nn5swkbd(10MakePreset|12SetGuideText|25GetRequiredWorkBufferSizeEb|27GetRequiredStringBufferSizeEv)
+root _ZN2nn3ngc12CountNumbersEPKc
+root _ZN2nn3ngc15ProfanityFilterC1Ev
+cut _ZN2nn3ngc15ProfanityFilter10InitializeEPvm
+cut _ZN2nn3ngc15ProfanityFilterD1Ev
+cut _ZN2nn3ngc15ProfanityFilter17GetContentVersionEv
+cut _ZN2nn3ngc15ProfanityFilter24MaskProfanityWordsInTextEPiPcj
+
+# Local Wireless (job 15): Pia compresses LDN join data with the SDK's zlib, which picks its deflate strategy through
+# the static ten-entry configuration_table at sdk+0xcaaad0 (16 bytes each, code pointer at +8; no symbol covers it),
+# then frees through nn::util's zlib allocator callbacks. Neither is reached by direct calls.
+datatable 0xcaaad0 0xa0
+root _ZN2nn4util6detail13ZlibAllocator8AllocateEPvjj
+root _ZN2nn4util6detail13ZlibAllocator4FreeEPvS3_

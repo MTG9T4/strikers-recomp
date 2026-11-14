@@ -1,0 +1,36 @@
+# Fresh profile: intro, two Futbot pages, Main Menu. Frames count presented frames; no game memory is touched.
+300+12:Z
+800+12:Z
+1000+12:Z
+1350+12:Z
+1650+12:Z
+1950+12:d
+2100+12:Z
+# Quick Battle, teams picked at random, one three-minute match.
+2500+12:Z
+2800+12:Z
+3100+20:l
+3300+12:Z
+4200+30:l
+4600+12:Z
+4900+30:l
+5200+12:Z
+5800+12:Z
+5950+12:Z
+6250+12:V
+6400+12:Z
+6550+12:Z
+6850+12:V
+7000+12:Z
+7150+12:Z
+7450+12:V
+7600+12:Z
+7750+12:Z
+8350+12:Z
+wait open:StrkrsSave:/strkrs.save
+900+12:!
+1500+12:Z
+1800+12:Z
+2100+12:d
+2160+12:d
+2220+12:Z

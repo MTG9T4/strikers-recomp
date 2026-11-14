@@ -1,0 +1,51 @@
+# Fresh userdata. Ordinary HID replay; also usable via STRIKERS_SDL_TEST_SEQ.
+# Intro/title, online notice, Futbot, choose Main Menu.
+300+12:Z
+800+12:Z
+1000+12:Z
+1350+8:Z
+1550+4:K
+1650+8:Z
+2000+8:*
+# Quick Battle -> Single Console -> three-minute match.
+2100+8:Z
+2300+8:*
+2400+8:Z
+2600+4:J
+2660+8:Z
+2850+8:*
+# Join the left team, Auto control, captain Mario.
+2900+4:J
+2960+8:Z
+3100+8:Z
+3300+8:*
+3400+8:Z
+3490+8:Z
+# Randomise the remaining roster, confirm uniform/stadium selections.
+3700+4:V
+3760+8:Z
+3820+8:Z
+3940+4:V
+4000+8:Z
+4060+8:Z
+4180+4:V
+4240+8:Z
+4300+8:Z
+4450+8:*
+4550+8:Z
+4850+8:*
+5150+8:*
+5450+8:*
+# Active-play observations. No match-state writes or transition hooks.
+
+# Synthetic Windows-key state through configured SDL keyboard bindings.
+6100+8:*
+6200+120:rS
+6350+8:*
+6500+90:u
+6620+8:*
+6800+45:Z
+6900+8:*
+7000+90:l
+7120+8:*
+

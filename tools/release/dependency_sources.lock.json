@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "note": "Offline source inputs. SHA-256 must be reviewed and filled before use; null never passes the source gate. Binary archives do not substitute for these sources.",
+  "sources": [
+    {
+      "name": "glslang",
+      "url": "https://github.com/KhronosGroup/glslang/archive/refs/tags/16.6.0.zip",
+      "cache": "glslang-16.6.0-source.zip",
+      "sha256": "a405dc18a69941044cf0cae820c0c2bd960f92dcb3810d0bc249447cc46f04e9",
+      "revision": "16.6.0",
+      "required_for": "strikers_glslang.dll",
+      "sha256_note": "computed by Claude 2026-11-05 from the official GitHub archive URL above"
+    },
+    {
+      "name": "SPIRV-Tools",
+      "url": "https://github.com/KhronosGroup/SPIRV-Tools/archive/ef96ed763b43b59b33b31b362f09a02b729fa1c9.zip",
+      "cache": "SPIRV-Tools-ef96ed763b43b59b33b31b362f09a02b729fa1c9.zip",
+      "sha256": "2a7666cfaec2818516019fccb8101a6e57c589417bef83a3c61d19ed63de1c1f",
+      "revision": "ef96ed763b43b59b33b31b362f09a02b729fa1c9",
+      "pin_source": "https://raw.githubusercontent.com/KhronosGroup/glslang/16.6.0/known_good.json",
+      "required_for": "strikers_glslang.dll",
+      "sha256_note": "computed by Claude 2026-11-05 from the official GitHub archive URL above"
+    },
+    {
+      "name": "SPIRV-Headers",
+      "url": "https://github.com/KhronosGroup/SPIRV-Headers/archive/496543121ce6419f23d6fa5d7194ba66c36212d2.zip",
+      "cache": "SPIRV-Headers-496543121ce6419f23d6fa5d7194ba66c36212d2.zip",
+      "sha256": "b33782a6ccd124e6e02634f6382456b0aba2242c6ec5b68d07be20ee77a5b6bc",
+      "revision": "496543121ce6419f23d6fa5d7194ba66c36212d2",
+      "pin_source": "https://raw.githubusercontent.com/KhronosGroup/glslang/16.6.0/known_good.json",
+      "required_for": "strikers_glslang.dll",
+      "sha256_note": "computed by Claude 2026-11-05 from the official GitHub archive URL above"
+    },
+    {
+      "name": "SDL3",
+      "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.18.zip",
+      "cache": "SDL3-3.4.18-source.zip",
+      "sha256": "8a93da90d4fb8f7797acc626a15078bc106655dfc44102f920b5af478222b797",
+      "revision": "release-3.4.18",
+      "required_for": "SDL3.dll",
+      "sha256_note": "computed by Claude 2026-11-05 from the official GitHub archive URL above"
+    }
+  ]
+}

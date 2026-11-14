@@ -1,0 +1,14 @@
+{
+  "LLVM-9-LICENSE.txt": {
+    "local_source": "deps/ghidra/licenses/Apache_License_2.0_with_LLVM_Exceptions.txt",
+    "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee",
+    "primary_reference": "https://releases.llvm.org/9.0.0/LICENSE.TXT",
+    "scope": "Full locally cached Apache-2.0 WITH LLVM-exception and retained legacy LLVM notice text; not claimed byte-identical to a file extracted from the LLVM Windows installer, which contains no license file."
+  },
+  "Microsoft-CRT-EULA.rtf": {
+    "local_source": "VC/Redist/MSVC/14.44.35112/vc_redist.x64.exe, Burn embedded CAB, u4",
+    "sha256": "8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b",
+    "eula_id": "Cpp_2015-2022_ENU.1033",
+    "scope": "Runtime use terms, extracted without executing an installer; not a replacement for Visual Studio's distributor grant."
+  }
+}

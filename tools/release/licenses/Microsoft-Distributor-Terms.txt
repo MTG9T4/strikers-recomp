@@ -1,0 +1,27 @@
+Microsoft Visual C++ runtime: distribution basis (recorded 2026-11-05 by Claude)
+
+Source: "Visual Studio 2022 Redistribution", Microsoft Learn,
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+(page dated 2025-11-11; read 2026-11-05).
+
+That page is the "Distributable List" ("REDIST.txt") referenced by the "Distributable Code"
+section of the Microsoft Software License Terms for Visual Studio 2022. Its "Visual C++ Runtime
+Files" section allows a validly licensed user to copy and distribute with their program the files
+within [VisualStudioFolder]\VC\redist and its subfolders, unmodified, subject to the License Terms
+for the software, except the debug_nonredist folders, which may not be distributed.
+
+What this project ships under that basis (unmodified, app-local, as part of the program):
+- From VC\Redist\MSVC\14.44.35112\x64\Microsoft.VC143.CRT (licensed developer installation):
+  the files listed in Microsoft-CRT-Redistribution.txt and hashed in
+  build/phase8/app-runtime/runtime-provenance.json. No debug_nonredist file is shipped.
+- The three older x64 runtime DLLs that LLVM 9.0.0's official Windows installer itself contains,
+  shipped unmodified next to the bundled clang/lld-link from that installer (verified official
+  archive SHA-256 71ed99a6720945d76b6772584735f2ed472f12719dff184a0b1a6a35047b8863).
+
+Conditions kept: files are unmodified, distributed only with this program (never as a standalone
+runtime offering), Microsoft notices inside the files are intact, and the Microsoft runtime terms
+(Microsoft-CRT-EULA.rtf) accompany them. The project's GPL does not relicense Microsoft files.
+
+This file records the basis the project relied on; it is not legal advice. The distributor (the
+person who shares the release) should confirm they hold a valid Visual Studio 2022 license
+(Community is available to individuals) before distributing the app-local runtime files.

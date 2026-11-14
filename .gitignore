@@ -1,0 +1,23 @@
+# Never commit game data, keys, firmware or generated code
+/dump/
+/build/
+/refs/
+/tools/bin/
+*.keys
+*.xci
+*.nsp
+*.nca
+*.nso
+*.nro
+*.elf
+__pycache__/
+/deps/
+/logs/
+/cloudflare/group/node_modules/
+/.venv/
+/installer/cache/
+/installer/sandbox/
+/release/
+/cloudflare/group/.release-signing-key.pem
+/cloudflare/group/release-assets/
+/public/

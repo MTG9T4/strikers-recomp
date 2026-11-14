@@ -1,0 +1,28 @@
+GPL-3.0-or-later corresponding source and additional written offer
+
+The distributor of this copy offers, to anyone possessing this object code,
+the complete Corresponding Source for all GPL-covered software in this exact
+release, including modifications, interface definitions and the scripts used
+to control compilation and installation, under GPL-3.0-or-later.
+
+This offer is valid for at least three years after the last distribution of
+this release and for as long as the distributor offers spare parts or customer
+support for this product model. The distributor will provide either a copy on
+a durable physical medium for no more than the reasonable cost of physically
+performing this conveyance, or access to copy it from a network server at no
+charge. No game dump, game-derived code, asset or console key is requested or
+included: the supplied setup tools generate each player's local copy.
+
+For this release the primary delivery method is accompanying complete source
+under GPL section 6(a), in corresponding-source/. A written offer never cures
+a missing source bundle or an incomplete exact-artifact source manifest.
+
+DISTRIBUTOR TO COMPLETE BEFORE DISTRIBUTION:
+Distributor legal name: [not supplied]
+Postal source-request address: [not supplied]
+Electronic source-request address / durable source URL: [not supplied]
+Release identifier and source-manifest SHA-256: [generated for final release]
+
+This is a prepared offer text, not an activated written offer, until those
+distributor details are supplied and the corresponding source is complete.
+Do not distribute a player release with these placeholders.

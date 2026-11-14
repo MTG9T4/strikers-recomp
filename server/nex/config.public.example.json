@@ -1,0 +1,15 @@
+{
+  "local_only": false,
+  "bind": "0.0.0.0",
+  "advertise": "203.0.113.10",
+  "auth_port": 10025,
+  "secure_port": 10026,
+  "nat_port": 10027,
+  "relay_port": 10028,
+  "tls_port": 443,
+  "tls_certificate": "/var/lib/strikers-nex/server.pem",
+  "tls_key": "/var/lib/strikers-nex/server.key",
+  "account_key": "/var/lib/strikers-nex/account.key",
+  "max_peers": 64,
+  "idle_seconds": 10
+}

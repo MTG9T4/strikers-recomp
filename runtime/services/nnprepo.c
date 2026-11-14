@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Upstream: smo-recomp/runtime/os/nnmisc.c; ssbu-recomp/runtime/nnmisc.c.
+ * Strikers offline play-report policy. Accept and discard telemetry. Constructors,
+ * setters and Clear retain no state because no report is ever sent; GetSize is zero. */
+#include "hostrt.h"
+static void prepo_discard(Ctx *c) { c->x[0]=0; }
+static const ImportDef prepo_imports[] = {
+    {"_ZN2nn5prepo10PlayReport10SetEventIdEPKc", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcPKvm", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcRKNS0_10Any64BitIdE", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcRKNS0_5ArrayE", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcRKNS0_6StructE", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcS3_", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcb", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcd", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcf", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport3AddEPKcl", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport4SaveERKNS_7account3UidE", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport4SaveEv", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport5ClearEv", prepo_discard},
+    {"_ZN2nn5prepo10PlayReport9SetBufferEPvm", prepo_discard},
+    {"_ZN2nn5prepo10PlayReportC1Ev", prepo_discard},
+    {"_ZN2nn5prepo28RequestImmediateTransmissionEv", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddEPKc", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddERKNS0_10Any64BitIdE", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddERKNS0_6StructE", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddEb", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddEd", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddEf", prepo_discard},
+    {"_ZN2nn5prepo5Array3AddEl", prepo_discard},
+    {"_ZN2nn5prepo5Array5ClearEv", prepo_discard},
+    {"_ZN2nn5prepo5Array9SetBufferEPvm", prepo_discard},
+    {"_ZN2nn5prepo5ArrayC1Ev", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcRKNS0_10Any64BitIdE", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcS3_", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcb", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcd", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcf", prepo_discard},
+    {"_ZN2nn5prepo6Struct3AddEPKcl", prepo_discard},
+    {"_ZN2nn5prepo6Struct5ClearEv", prepo_discard},
+    {"_ZN2nn5prepo6Struct9SetBufferEPvm", prepo_discard},
+    {"_ZN2nn5prepo6StructC1Ev", prepo_discard},
+    {"_ZNK2nn5prepo10PlayReport7GetSizeEv", prepo_discard},
+    {"_ZNK2nn5prepo5Array7GetSizeEv", prepo_discard},
+    {"_ZNK2nn5prepo6Struct7GetSizeEv", prepo_discard},
+};
+void register_prepo_imports(void) { register_imports(prepo_imports,sizeof prepo_imports/sizeof prepo_imports[0]); }

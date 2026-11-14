@@ -1,0 +1,46 @@
+# Seeded-profile launcher route; Job 23b team-selection timing correction.
+# Intro-complete seed. Ordinary SDL controls, with generous cold-load spacing.
+# Left stick is l/u/r/d; no guest state or address writes.
+300+12:Z
+800+12:Z
+1000+8:*
+2000+8:*
+2100+12:Z
+2300+8:*
+2400+12:Z
+2700+20:l
+2900+12:Z
+3200+8:*
+3800+30:l
+4200+12:Z
+4500+30:l
+4800+12:Z
+5100+8:*
+5400+12:Z
+5550+12:Z
+5850+12:V
+6000+12:Z
+6150+12:Z
+6450+12:V
+6600+12:Z
+6750+12:Z
+7050+12:V
+7200+12:Z
+7350+12:Z
+7650+8:*
+7950+12:Z
+8250+8:*
+8550+8:*
+8850+8:*
+wait open:StrkrsSave:/strkrs.save
+120+8:*
+900+12:!
+1080+8:*
+1500+12:Z
+1680+8:*
+1800+12:Z
+1980+8:*
+2100+12:d
+2160+12:d
+2220+12:Z
+2460+8:*
