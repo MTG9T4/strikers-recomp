@@ -19,6 +19,18 @@ C ahead of time, and a host runtime replaces the console's system services, NVN 
   network (Local Wireless).
 - Runs at 60 fps like the Switch version (a 30 fps cap is available); the game's own clock stays at 60 Hz.
 
+## Screenshots
+
+Taken from the 0.1.0 release on Windows. The pictures are hosted on the release page, not in this repository.
+
+![A match, 21:9 ultrawide](https://github.com/MTG9T4/strikers-recomp/releases/download/v0.1.0/screenshot-ultrawide.jpg)
+
+![A match, 16:9](https://github.com/MTG9T4/strikers-recomp/releases/download/v0.1.0/screenshot-match.jpg)
+
+| | |
+|---|---|
+| ![Main menu](https://github.com/MTG9T4/strikers-recomp/releases/download/v0.1.0/screenshot-main-menu.jpg) | ![Character select](https://github.com/MTG9T4/strikers-recomp/releases/download/v0.1.0/screenshot-character-select.jpg) |
+
 ## Bring your own game
 
 This repository holds only the project's own tools and runtime. **It contains no game code, game data, artwork, keys or
