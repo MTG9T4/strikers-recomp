@@ -4,6 +4,21 @@ A static recompilation of Mario Strikers: Battle League (Switch, title 010019401
 native Windows x64 program, following the approach of ssbu-recomp and smo-recomp: the game's AArch64 code is translated to
 C ahead of time, and a host runtime replaces the console's system services, NVN graphics (on Vulkan), audio and input.
 
+## Features
+
+- **Resolution:** internal resolution from 0.5x to 2x (2x renders the game's 1080p at 4K; Vulkan renderer), and FSR 1
+  upscaling with sharpening, or nearest or integer scaling, to fit the window.
+- **Ultrawide (experimental):** widens the game's own camera to 21:9, 32:9 or the window's shape; the interface is
+  stretched to fit, or centred.
+- **Image:** HDR10 with adjustable paper white and peak brightness, SMAA, anisotropic filtering up to 16x.
+- **Textures:** ASTC textures decoded on the graphics card; texture dumping and replacement, for texture packs.
+- **Mods:** mods and Atmosphere cheats.
+- **Controls:** Xbox, PlayStation, Switch and GameCube controllers, with Xbox and PlayStation button pictures; rebindable
+  keyboard; mouse clicks in menus.
+- **More:** fast-forward (hold Tab), saves imported from emulators, 5.1 surround sound, online play over a private group
+  network (Local Wireless).
+- Runs at 60 fps like the Switch version (a 30 fps cap is available); the game's own clock stays at 60 Hz.
+
 ## Bring your own game
 
 This repository holds only the project's own tools and runtime. **It contains no game code, game data, artwork, keys or
@@ -37,8 +52,8 @@ See [docs/PLAYING.md](docs/PLAYING.md): installing, setup, controls, settings, u
 
 ## Developers
 
-`docs/` holds the design notes and the record of each piece of work (`reference-architecture.md` for how the runtime
-is put together, `phase*.md` and `audit-*.md` for the history).
+Files taken from ssbu-recomp and smo-recomp name their upstream file and commit in their header. The development notes
+some headers mention are not part of this copy.
 
 | Tool | Version | Where |
 |---|---|---|
