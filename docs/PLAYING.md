@@ -82,6 +82,59 @@ match actions. Press **F1** to open PC graphics, controller and Online options;
 press F1 again to return to the game. Start with the default window size and
 resolution if you are unsure which graphics settings to choose.
 
+## PC features
+
+Press **F1** in the game for the PC settings. A setting marked **(restart)**
+takes effect the next time you open the game. "The extracted folder" below is
+the folder you extracted the release ZIP to.
+
+- **Resolution:** Graphics > **Internal resolution** renders the game from 0.5x
+  (960 x 540) to 2x (3840 x 2160, 4K); **Match window at startup** fits it to
+  the window. Higher settings need a stronger graphics card.
+- **Upscaling:** Graphics > **Final image scaling** chooses how the picture is
+  fitted to the window: linear, AMD FSR 1 (with **FSR sharpness**), nearest or
+  integer.
+- **Ultrawide (experimental):** Display > **Ultrawide** shows more of the
+  stadium at the sides, at 21:9, 32:9 or the window's shape. The interface is
+  stretched to fit (player markers stay exact) or centred at 16:9 (markers
+  drift inward).
+- **HDR10:** turn on HDR in Windows' display settings first, then Graphics >
+  **HDR**. Set **peak brightness** to your monitor's; **paper white** sets how
+  bright the picture's whites are.
+- **SMAA:** Graphics > **SMAA anti-aliasing** smooths jagged edges.
+- **Anisotropic filtering:** set `anisotropic_filtering` to 2, 4, 8 or 16 in
+  `strikers.ini` in the extracted folder (`game` keeps the game's own).
+- **Frame rate:** the game runs at 60 fps, as on the Switch. Display >
+  **Presentation cap** can lower it to 30; the game's clock stays at 60 Hz.
+  **Vsync** is on the same tab.
+- **Performance readout:** Graphics > **Performance readout**; F10 shows or
+  hides it in the game.
+- **Fast-forward:** hold **Tab** to run the game 2x to 8x faster, for scenes
+  you cannot skip (Audio / controls > **Fast-forward**). It is off in Local
+  Wireless rooms.
+- **Saves from an emulator:** the **Saves** tab finds saves from Ryujinx, yuzu,
+  Eden and the other yuzu forks on this PC, or choose a `strkrs.save` file (an
+  emulator save, or a backup of your Switch save). Your current save is kept as
+  a backup, and you can switch back to it there.
+- **Mods:** put each mod in its own folder as `mods\<mod name>\romfs\...` in
+  the extracted folder, the way yuzu and Ryujinx keep them, and switch them on
+  or off in the **Mods** tab. Everyone in a Local Wireless room needs the same
+  mods, or none.
+- **Cheats:** cheat files in the Atmosphere format go in the `cheats` folder
+  (the **Cheats** tab opens it), named by the game's build ID. Cheats wait
+  while you are in a Local Wireless room.
+- **Texture packs:** PNG files in a `textures` folder in the extracted folder
+  replace the game's textures; each file is named by its texture's 16-digit
+  hash. To find those names, make a `textures\dump` folder: the game then saves
+  every texture it loads there, as `<hash>_<width>x<height>.png`. Delete the
+  `dump` folder again when you have what you need.
+- **Controls:** Audio / controls holds **Button pictures** (automatic, Switch,
+  Xbox or PlayStation), **Pad layout**, the keyboard bindings (click a key to
+  change it, right-click to clear it) and mouse clicks in simple menus (left
+  confirms, right goes back).
+- **Sound:** Audio / controls > **Speakers** chooses stereo or 5.1 surround;
+  automatic follows Windows' speaker setup.
+
 ## Join your friends' group
 
 Your organizer supplies a `strikers.ini` with the group service address and
