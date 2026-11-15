@@ -81,6 +81,11 @@ some headers mention are not part of this copy.
 `python -I scripts/fetch_deps.py` fetches everything under `deps/`, each archive checked against a pinned SHA-256. The
 test harnesses in `tools/audit/` run against the build in `build/` that `scripts/setup.py` made from your folders.
 
+## Support
+
+If you'd like to support the project, you can [buy me a coffee](https://buymeacoffee.com/mtg9t4). It's entirely
+optional: everything here stays free.
+
 ## License
 
 GPL-3.0-or-later (see `LICENSE`). The runtime started from ssbu-recomp and smo-recomp (GPL-3.0-or-later); files taken
