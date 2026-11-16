@@ -52,8 +52,9 @@ first game frame is ready. Graphics may need preparing again after a driver
 update or a change of PC.
 
 Your settings, saves and group identity are stored in `userdata` inside that
-folder. Keep that folder if you update the game. Ask your organizer before
-moving files between releases. Do not copy a friend's `userdata` folder.
+folder. To update to a new release, extract it into a new folder, run setup
+there with the same ExeFS and RomFS folders, then copy your old `userdata`
+folder into the new one. Do not copy a friend's `userdata` folder.
 
 ## Controls
 
