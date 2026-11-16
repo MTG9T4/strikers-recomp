@@ -269,6 +269,16 @@ static DWORD WINAPI lan_worker(void *unused) {
     }
     return 0;
 }
+/* The adapter that holds the default route is the one the other PCs on the network share. Without this the first
+ * broadcast adapter wins, and on PCs with WSL, Hyper-V or VirtualBox that is often a virtual adapter no other PC is
+ * on. A UDP connect only looks up the route: nothing is sent, and 203.0.113.1 is a documentation address. */
+static uint32_t lan_route_ip(void) {
+    SOCKET s=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP); if(s==INVALID_SOCKET) return 0;
+    struct sockaddr_in to={0},me={0}; int len=sizeof me; uint32_t ip=0;
+    to.sin_family=AF_INET; to.sin_port=htons(9); InetPtonA(AF_INET,"203.0.113.1",&to.sin_addr);
+    if(!connect(s,(struct sockaddr*)&to,sizeof to) && !getsockname(s,(struct sockaddr*)&me,&len)) ip=ntohl(me.sin_addr.s_addr);
+    closesocket(s); return ip;
+}
 static int lan_interface(void) {
     if(zt_requested()){L.interface_ip=0x64400000;L.interface_mask=0xffffffff;L.broadcast=0xffffffff;return zt_ready();}
     const char *wanted=getenv("STRIKERS_LDN_INTERFACE");
@@ -277,17 +287,21 @@ static int lan_interface(void) {
     if(s==INVALID_SOCKET) return 0;
     int ok=WSAIoctl(s,SIO_GET_INTERFACE_LIST,NULL,0,interfaces,sizeof interfaces,&bytes,NULL,NULL)==0; closesocket(s);
     uint32_t desired=0; if(wanted) {struct in_addr a; if(InetPtonA(AF_INET,wanted,&a)!=1) return 0; desired=ntohl(a.s_addr);}
+    if(!desired) desired=lan_route_ip();
     L.interface_ip=0;
+    /* first pass: the requested or default-route adapter; second pass: the first usable one, as before */
+    for(int pass=0;pass<2 && !L.interface_ip;pass++)
     if(ok) for(unsigned i=0;i<bytes/sizeof interfaces[0];i++) {
         INTERFACE_INFO *p=&interfaces[i]; uint32_t ip=ntohl(p->iiAddress.AddressIn.sin_addr.s_addr),mask=ntohl(p->iiNetmask.AddressIn.sin_addr.s_addr);
-        if(getenv("STRIKERS_LDN_TRACE") && (p->iiFlags&IFF_UP))
+        if(!pass && getenv("STRIKERS_LDN_TRACE") && (p->iiFlags&IFF_UP))
             printf("[lan] adapter candidate=%u.%u.%u.%u mask=%08x flags=%lx\n",ip>>24,(ip>>16)&255,(ip>>8)&255,ip&255,mask,(unsigned long)p->iiFlags);
         /* A point-to-point VPN /32 has no LAN broadcast domain. Do not let it
          * hide the actual Ethernet/Wi-Fi adapter (or loopback fallback). */
         if(!(p->iiFlags&IFF_UP) || !(p->iiFlags&IFF_BROADCAST) || (p->iiFlags&IFF_POINTTOPOINT) ||
-           (ip>>24)==127 || !mask || mask>=0xfffffffeu || (desired && desired!=ip)) continue;
+           (ip>>24)==127 || !mask || mask>=0xfffffffeu || (desired && desired!=ip && (!pass || wanted))) continue;
         L.interface_ip=ip;L.interface_mask=mask;break;
     }
+    if(L.interface_ip) {uint32_t ip=L.interface_ip;printf("[lan] same-network adapter %u.%u.%u.%u mask=%08x\n",ip>>24,(ip>>16)&255,(ip>>8)&255,ip&255,L.interface_mask);}
     if(!L.interface_ip && !wanted) {printf("[lan] no usable LAN broadcast adapter; using loopback\n");L.interface_ip=0x7f000001;L.interface_mask=0xff000000;}
     if(!L.interface_ip && wanted) printf("[lan] requested interface %s is not an active LAN broadcast adapter\n",wanted);
     L.broadcast=L.interface_ip|~L.interface_mask;

@@ -17,6 +17,9 @@ typedef struct {
     ZtPeerStatus peer[64];
 } ZtStatus;
 int zt_requested(void);
+/* Same-network Local Wireless: [Network] mode = lan (or STRIKERS_NETWORK=lan), or mode = zerotier with no group
+ * network and no group service set. */
+int zt_lan_mode(void);
 void zt_config(char *mode, unsigned mode_cap, char *network, unsigned network_cap);
 void zt_start(void); /* idempotent, immediately returns; background worker */
 int zt_set_group_network(const char *network); /* validated enrollment; no active-network switching */

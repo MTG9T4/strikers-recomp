@@ -34,12 +34,18 @@ def main():
     ap.add_argument('--block-direct', action='store_true')
     ap.add_argument('--instances', type=int, choices=(2, 3), default=2)
     ap.add_argument('--third-seq', type=Path, default=ROOT / 'tools/audit/job18_lan_third.seq')
+    ap.add_argument('--install', type=Path, help='run --exe from this installed copy (its build/dump) instead of build/bin')
+    ap.add_argument('--player-ini', help='as players run it: no STRIKERS_NETWORK or STRIKERS_LDN_INTERFACE; this text is '
+                                         "each instance's strikers.ini [Network] section (\\n for new lines), so the "
+                                         'INI picks the mode and the game picks the real network adapter')
     args = ap.parse_args()
     assert Path(args.name).name == args.name and Path(args.exe).name == args.exe
-    executable = ROOT / 'build/bin' / args.exe
+    bin_dir = args.install.resolve() if args.install else ROOT / 'build/bin'
+    dump = bin_dir / 'build/dump/update' if args.install else ROOT / 'build/dump/update'
+    executable = bin_dir / args.exe
     executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
     dependency_sha256 = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                         for p in (ROOT / 'build/bin').glob('*.dll')
+                         for p in bin_dir.glob('*.dll')
                          if p.name in ('strikers_game.dll', 'strikers_zt.dll', 'libopus-0.dll', 'SDL3.dll')}
     records = []; processes = []; handles = []
     zt_keys = []
@@ -74,7 +80,14 @@ def main():
                 STRIKERS_SDL_TEST_SEQ=seq.resolve().as_posix(),
                 STRIKERS_CONFIG=prefix.with_suffix('.ini').as_posix(),
                 STRIKERS_USERDATA=prefix.as_posix() + '-userdata',
-                STRIKERS_ROMFS=(ROOT / 'build/dump/update/romfs').as_posix())
+                STRIKERS_ROMFS=(dump / 'romfs').as_posix())
+            if args.player_ini is not None:
+                del env['STRIKERS_NETWORK'], env['STRIKERS_LDN_INTERFACE']
+                ini = Path(prefix.as_posix() + '-strikers.ini')
+                ini.write_text('window = windowed\nwidth = 1280\nheight = 720\nresolution_scale = 0.5\nunfocused = run\n'
+                               '[Network]\n' + args.player_ini.replace('\\n', '\n') + '\n')
+                env['STRIKERS_PC_CONFIG'] = ini.as_posix()
+                env['STRIKERS_SHOW'] = '0'                     # no window comes to the front
             if role=='station' and args.station_build:
                 env['STRIKERS_LDN_BUILD'] = args.station_build
             if args.net_sim:
@@ -87,8 +100,8 @@ def main():
                     env['STRIKERS_ZT_BLOCK_DIRECT'] = env['STRIKERS_ZT_PEERS']
             handle = log.open('wb'); handles.append(handle)
             p = subprocess.Popen([str(executable),
-                str(ROOT / 'build/dump/update/elf/main.elf'), str(args.seconds)],
-                cwd=ROOT / 'build/bin', env=env, stdout=handle, stderr=subprocess.STDOUT)
+                str(dump / 'elf/main.elf'), str(args.seconds)],
+                cwd=bin_dir, env=env, stdout=handle, stderr=subprocess.STDOUT)
             processes.append(p)
             records.append({'role': role, 'pid': p.pid, 'log': str(log.relative_to(ROOT)), 'env': env,
                 'executable': str(executable.relative_to(ROOT)), 'executable_sha256': executable_sha256,

@@ -135,9 +135,29 @@ the folder you extracted the release ZIP to.
 - **Sound:** Audio / controls > **Speakers** chooses stereo or 5.1 surround;
   automatic follows Windows' speaker setup.
 
-## Join your friends' group
+## Play on the same network
 
-Your organizer supplies a `strikers.ini` with the group service address and
+Local Wireless plays with PCs on the same home network (Wi-Fi or cable), with
+no accounts and nothing to set up. This is the default (`mode = lan` under
+`[Network]` in `strikers.ini`).
+
+1. Everyone uses the same release version.
+2. One player opens **Quick Battle → Local Wireless** and creates a room.
+3. The others open Local Wireless on their PCs and choose that room.
+
+The first time, Windows may ask whether to allow the game on networks: allow it
+on **private** networks. If you said no, open **Windows Security → Firewall &
+network protection → Allow an app through firewall** and tick **Private** for
+`strikers_native.exe`. Guest or public Wi-Fi often keeps PCs apart; a home
+network does not.
+
+## Play over the internet with a group
+
+Friends in different places play Local Wireless over a private group network
+instead. This needs an organizer who runs the group service; if you only play
+with PCs on the same network, skip this section.
+
+Your organizer supplies a `strikers.ini` with `mode = zerotier`, the group service address and
 private invitation code filled in. Keep that code within your group. Nobody
 needs a ZeroTier account or the separate ZeroTier desktop app. The organizer
 deploys the group service, makes a code and sends the ZIP and INI; the free
@@ -192,7 +212,12 @@ account sign-in are not part of this setup.
   `userdata\crashes`. Send the latest `.dmp` and matching `.txt` if the organizer
   asks. They are never uploaded automatically. A report can contain parts of
   the running process, so share it privately.
-- **No room appears:** check that everyone sees Connected, uses the same
+- **No room appears on the same network:** check that everyone uses the same
+  release, that the PCs are on the same network (not guest Wi-Fi), that one
+  player actually created a Local Wireless room, and that the game is allowed
+  on private networks in Windows Firewall. `userdata\last-game.log` names the
+  network adapter the game used, in a line starting with `[lan]`.
+- **No room appears in a group:** check that everyone sees Connected, uses the same
   release and group, and that one friend actually created a Local Wireless
   room. Ask for a new invitation if yours expired. Do not change router,
   firewall or Windows settings as a first step.

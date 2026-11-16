@@ -74,8 +74,8 @@ int strikers_online_hostname(const char *name) {
     return online_label(label,(size_t)(suffix-label));
 }
 int strikers_lan_enabled(void) {
-    const char *mode = getenv("STRIKERS_NETWORK");
-    return (mode && !strcmp(mode, "lan")) || zt_requested();
+    /* STRIKERS_NETWORK first, then strikers.ini's [Network] mode (zt_config) */
+    return zt_lan_mode() || zt_requested();
 }
 /* main +14408c treats failure of the local-play history key as a failed room.
  * SDK +1cdd84 supplies a 0x40-byte output. This is an opaque runtime-local
@@ -105,7 +105,7 @@ void register_network_imports(void) {
     register_nnnifm_imports(); register_nnssl_imports();
     const char *mode = getenv("STRIKERS_NETWORK");
     if(strikers_lan_enabled()) register_imports(lan_local_history,sizeof lan_local_history/sizeof lan_local_history[0]);
-    if (mode && strcmp(mode, "offline") && strcmp(mode, "0") && strcmp(mode, "lan") && strcmp(mode,"online") && !zt_requested()) {
+    if (mode && strcmp(mode, "offline") && strcmp(mode, "0") && strcmp(mode, "lan") && strcmp(mode,"online") && !zt_requested() && !zt_lan_mode()) {
         if (!g_module) guest_trap("STRIKERS_NETWORK requested but no network module is installed", 0);
         g_module();
     }

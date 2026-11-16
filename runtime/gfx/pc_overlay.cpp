@@ -303,6 +303,7 @@ static void draw_main_menu(int mode, unsigned width, unsigned height) {
     if(upd)snprintf(line,sizeof line,"Version %s is ready: choose UPDATE (about %d min). Your saves and settings stay.",upd_version,upd_minutes);
     else if(group.configured&&group.joined)group_connection(line,sizeof line);
     else if(group.configured)snprintf(line,sizeof line,"Online: choose ONLINE to join your group with an invite code.");
+    else if(zt_lan_mode())snprintf(line,sizeof line,"Local Wireless: PCs on the same network see each other's rooms.");
     else snprintf(line,sizeof line,"Online is not set up in strikers.ini.");
     bg->AddText(sf,ss*0.9f,ImVec2(x,H-120*s),IM_COL32(255,224,120,255),line);
     bg->AddText(sf,ss*0.85f,ImVec2(x,H-48*s),IM_COL32(255,255,255,255),start?"In game, F1 or Minus + Plus opens the PC menu.":"Esc, B or F1 goes back to the game.");
@@ -471,7 +472,13 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
                     }
                 }
                 ZtStatus s;zt_status(&s);
-                if(!group.configured||ImGui::CollapsingHeader("Connection details")) {
+                if(zt_lan_mode()) {
+                    ImGui::SeparatorText("Same network (LAN)");
+                    ImGui::TextWrapped("Local Wireless plays with PCs on the same home network: no accounts and nothing to set up. One player creates a room in Quick Battle > Local Wireless, and the others choose it from the list. Everyone needs the same release version.");
+                    ImGui::TextWrapped("If Windows asks whether to allow the game on networks, allow it on private networks.");
+                    ImGui::TextDisabled("To play over the internet with a group, use the strikers.ini your organizer sends (mode = zerotier with its service and invite code).");
+                }
+                else if(!group.configured||ImGui::CollapsingHeader("Connection details")) {
                 const char *states[]={"Offline","Joining","Connected","Waiting for authorization","Connection error"};
                 ImGui::Text("Status: %s",states[s.state>=0&&s.state<5?s.state:4]);
                 ImGui::Text("Network: %s",s.name[0]?s.name:"Not connected");

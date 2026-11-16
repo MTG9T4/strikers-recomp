@@ -15,8 +15,9 @@ C ahead of time, and a host runtime replaces the console's system services, NVN 
 - **Mods:** mods and Atmosphere cheats.
 - **Controls:** Xbox, PlayStation, Switch and GameCube controllers, with Xbox and PlayStation button pictures; rebindable
   keyboard; mouse clicks in menus.
-- **More:** fast-forward (hold Tab), saves imported from emulators, 5.1 surround sound, online play over a private group
-  network (Local Wireless).
+- **Local Wireless:** with PCs on the same network, with nothing to set up; or over the internet through a private group
+  network.
+- **More:** fast-forward (hold Tab), saves imported from emulators, 5.1 surround sound.
 - Runs at 60 fps like the Switch version (a 30 fps cap is available); the game's own clock stays at 60 Hz.
 
 ## Screenshots

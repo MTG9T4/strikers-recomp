@@ -56,7 +56,9 @@ static const char *const k_default_ini =
 "profile = custom\r\n"
 "unfocused = run\r\n"
 "frame_time_overlay = off\r\n"
-"\r\n[Network]\r\nmode = offline\r\nzerotier_network = \r\ngroup_service = \r\ngroup_code = \r\n";
+"\r\n; mode: lan (Local Wireless with PCs on the same network) | zerotier (a group over the internet: set\r\n"
+"; group_service and group_code, or zerotier_network) | offline\r\n"
+"[Network]\r\nmode = lan\r\nzerotier_network = \r\ngroup_service = \r\ngroup_code = \r\n";
 
 #define GFX_LOW_SCALE 0.5f
 #define GFX_LOW_SCALE_TEXT "0.50"
@@ -95,7 +97,7 @@ static BOOL CALLBACK opt_load(PINIT_ONCE once, PVOID arg, PVOID *ctx) {
     GfxOptions *o = &g_opt;
     int written = 0, unknown = 0, migrated = 0;
     memset(o, 0, sizeof *o);
-    snprintf(o->network_mode,sizeof o->network_mode,"offline");
+    snprintf(o->network_mode,sizeof o->network_mode,"lan");
     o->width = 1280; o->height = 720; o->scale = 1.0f; o->window_mode = 0; o->sharpness = 0.2f; o->frame_cap = 60; o->volume = 100; o->pad_layout = -1; o->mouse_menu = 1; o->start_screen = 1; o->speakers = -1; o->fast_forward = 4; o->hdr_paper = 200; o->hdr_peak = 400; pc_default_keys(o->keys);
     opt_path(o->path);
     FILE *f = fopen(o->path, "rb");
@@ -220,7 +222,8 @@ int gfx_options_save(const GfxOptions *o) {
     fprintf(f,"antialiasing = %s\nhdr = %s\nhdr_paper_white = %d\nhdr_peak = %d\n",o->antialias==1?"smaa":"off",o->hdr?"on":"off",o->hdr_paper,o->hdr_peak);
     if(o->fast_forward)fprintf(f,"fast_forward = %d\n",o->fast_forward);else fprintf(f,"fast_forward = off\n");
     for(int a=0;a<24;a++)if(o->keys_set>>a&1)fprintf(f,"key.%s = 0x%02X, 0x%02X, 0x%02X\n",pc_action_names[a],o->keys[a][0],o->keys[a][1],o->keys[a][2]);
-    fprintf(f,"\n[Network]\nmode = %s\nzerotier_network = %s\n",o->network_mode,o->zerotier_network);
+    fprintf(f,"\n; mode: lan (Local Wireless with PCs on the same network) | zerotier (a group over the internet: set\n; group_service and group_code, or zerotier_network) | offline\n");
+    fprintf(f,"[Network]\nmode = %s\nzerotier_network = %s\n",o->network_mode,o->zerotier_network);
     fprintf(f,"group_service = %s\ngroup_code = %s\n",o->group_service,o->group_code);
     int ok=!ferror(f); if(fflush(f))ok=0; if(fclose(f))ok=0;
     if(!ok || !MoveFileExA(tmp,o->path,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){ DeleteFileA(tmp); ReleaseSRWLockExclusive(&g_save_lock);return 0; } ReleaseSRWLockExclusive(&g_save_lock);return 1;

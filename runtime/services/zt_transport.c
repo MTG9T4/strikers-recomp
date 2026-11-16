@@ -83,7 +83,7 @@ void zt_config(char *mode,unsigned mc,char *network,unsigned nc) {
     } else if((p=getenv("STRIKERS_USERDATA"))&&*p)snprintf(path,sizeof path,"%s/strikers.ini",p);
     else {GetModuleFileNameA(NULL,exe,sizeof exe);char *s=strrchr(exe,'\\');if(s)*s=0;snprintf(path,sizeof path,"%s/../config/strikers.ini",exe);}
     char absolute[MAX_PATH];if(_fullpath(absolute,path,sizeof absolute))snprintf(path,sizeof path,"%s",absolute);
-    p=getenv("STRIKERS_NETWORK");if(p)snprintf(mode,mc,"%s",p);else GetPrivateProfileStringA("Network","mode","offline",mode,mc,path);
+    p=getenv("STRIKERS_NETWORK");if(p)snprintf(mode,mc,"%s",p);else GetPrivateProfileStringA("Network","mode","lan",mode,mc,path);
     p=getenv("STRIKERS_ZEROTIER_NETWORK");if(p)snprintf(network,nc,"%s",p);else GetPrivateProfileStringA("Network","zerotier_network","",network,nc,path);
 }
 static INIT_ONCE config_once=INIT_ONCE_STATIC_INIT;
@@ -113,10 +113,19 @@ int zt_set_group_network(const char *n) {
     if(p_zts_strikers_group_peers)p_zts_strikers_group_peers(group_enabled,v,group_peers,group_count);
     ReleaseSRWLockExclusive(&zlock);return 1;
 }
+static int lan_mode;
 static BOOL CALLBACK read_mode(PINIT_ONCE o,PVOID a,PVOID *c) {
-    (void)o;(void)a;(void)c;char m[64],n[64];zt_config(m,sizeof m,n,sizeof n);requested=!_stricmp(m,"zerotier");return TRUE;
+    (void)o;(void)a;(void)c;char m[64],n[64];zt_config(m,sizeof m,n,sizeof n);
+    if(!_stricmp(m,"zerotier")) {
+        /* A group needs its network ID or a group service. With neither, it could never connect: Local Wireless
+         * uses the same network (LAN) instead. 0.1.0 shipped mode = zerotier with both empty. */
+        if(n[0]||service_configured())requested=1;
+        else {lan_mode=1;printf("[network] no group network or group service in strikers.ini; Local Wireless uses the same network (LAN)\n");}
+    } else if(!_stricmp(m,"lan"))lan_mode=1;
+    return TRUE;
 }
 int zt_requested(void) {InitOnceExecuteOnce(&config_once,read_mode,NULL,NULL);return requested;}
+int zt_lan_mode(void) {InitOnceExecuteOnce(&config_once,read_mode,NULL,NULL);return lan_mode;}
 static void set_state(int state,const char *msg) {
     AcquireSRWLockExclusive(&zlock);
     if(status.state!=state||strcmp(status.message,msg))printf("[zerotier] state=%d %s\n",state,msg);
