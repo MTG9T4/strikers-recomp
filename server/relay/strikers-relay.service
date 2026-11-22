@@ -1,0 +1,18 @@
+[Unit]
+Description=Strikers relay (internet rooms for Local Wireless)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -I /opt/strikers-relay/strikers_relay.py --port 24890 -v
+DynamicUser=yes
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

@@ -57,6 +57,8 @@ typedef struct {
     unsigned lmem_words, ssbo_word0;
     struct { uint8_t unit, shadow; uint16_t binding; char type[24]; } smp[64]; int nsmp;      /* target 1: named samplers used (SMP) */
     int dyn_unit_ok;                          /* tex_unit() may return a unit of a handle kept in a uniform buffer (op_tex_b) */
+    int gs_pass;                              /* a pass-through geometry stage (program header word 0 bit 24, see mx_translate) */
+    uint32_t pass_written;                    /* pass-through: generic outputs the code sets for the whole primitive (mx_paN) */
 } Mx;
 
 const char *mx_opcode_name(uint64_t insn) {
@@ -258,6 +260,13 @@ static const char *attr_in(Mx *e, unsigned a, const char *vtx) {      /* vtx: ge
 static void attr_out(Mx *e, unsigned a, const char *v) {
     unsigned c = (a >> 2) & 3;
     if (e->in->stage != MX_VERTEX && e->in->stage != MX_GEOMETRY) { fail(e, "attribute store", "attribute store in stage %d", e->in->stage); return; }
+    if (e->gs_pass) {                             /* pass-through: what the code sets holds for every vertex the primitive passes on (MX_GS_PASS) */
+        if (a == 0x64) { e->uses_layer_out = 1; emit(e, " mx_layer = int(%s);", v); }
+        else if (a == 0x68) { e->uses_vp_out = 1; emit(e, " mx_vpi = int(%s);", v); }
+        else if (a >= 0x80 && a < 0x280) { e->pass_written |= 1u << ((a - 0x80) >> 4); e->out_attr |= 1u << ((a - 0x80) >> 4); emit(e, " mx_pa%u[%u] = F(%s);", (a - 0x80) >> 4, c, v); }
+        else fail(e, "attribute store", "store to attribute 0x%x in a pass-through geometry stage", a);
+        return;
+    }
     if (a >= 0x70 && a < 0x80) emit(e, " gl_Position[%u] = F(%s);", c, v);
     else if (a >= 0x80 && a < 0x280) { e->out_attr |= 1u << ((a - 0x80) >> 4); emit(e, " out_attr%u[%u] = F(%s);", (a - 0x80) >> 4, c, v); }
     else if (a == 0x6c && e->in->stage == MX_GEOMETRY) emit(e, " gl_PointSize = F(%s);", v);      /* a geometry stage writes its own (no push constant) */
@@ -1926,6 +1935,16 @@ int mx_translate(const MxIn *in, MxOut *out) {
     if (in->stage == MX_GEOMETRY && in->target != 1) fail(e, "geometry stage", "a geometry stage in the OpenGL text");      /* Vulkan only */
     else if (in->stage != MX_VERTEX && in->stage != MX_FRAGMENT && in->stage != MX_COMPUTE && in->stage != MX_GEOMETRY) fail(e, "tessellation stage", "stage %d is not supported", in->stage);
 
+    /* A pass-through geometry stage (program header word 0 bit 24; [doc] yuzu shader_header.h geometry_passthrough,
+     * NV_geometry_shader_passthrough): the hardware passes every vertex of the input primitive on, with what the code
+     * sets for the whole primitive (the layer, the viewport, generic outputs); the code itself emits nothing. The game's
+     * one (program #260, 144 bytes) only sets the layer from c3[0]: the crowd's 64-layer picture arrays and other layered
+     * targets are drawn through it. Translated as plain geometry code it emitted no vertex: those layers stayed empty and
+     * the stands had no crowd. At the end of the code (EXIT) MX_GS_PASS emits the input primitive's vertices. */
+    if (in->stage == MX_GEOMETRY && in->target == 1 && in->code_len >= 4) {
+        uint32_t w0; memcpy(&w0, in->code, 4);
+        if (w0 >> 24 & 1) { e->gs_pass = 1; snprintf(e->exitcode, sizeof e->exitcode, "MX_GS_PASS "); }
+    }
     /* ultrawide (MxIn.wide): the position narrowed on the way out, see mx_translate.h */
     if (in->stage == MX_VERTEX && in->wide && in->target == 1)      /* (a geometry stage: before every EmitVertex, MX_GS_FILL) */
         snprintf(e->exitcode, sizeof e->exitcode, "if (mx_wide != 1.0 && abs(gl_Position.w - 1.0) <= 1e-5 && abs(abs(gl_Position.x) - 1.0) > 0.002 && abs(abs(gl_Position.x) - 3.0) > 0.002) gl_Position.x *= mx_wide; ");
@@ -2058,6 +2077,12 @@ int mx_translate(const MxIn *in, MxOut *out) {
             memcpy(&w2, in->code + 8, 4); memcpy(&w3, in->code + 12, 4); memcpy(&w4, in->code + 16, 4);
             unsigned topo = (w3 >> 24) & 15, maxv = w4 & 0xfff, inv = (w2 >> 24) & 0xff;
             const char *ot = topo == 1 ? "points" : topo == 6 ? "line_strip" : topo == 7 ? "triangle_strip" : NULL;
+            static const unsigned pass_nv[3] = {1, 2, 3};
+            if (e->gs_pass) {                      /* the input primitive goes out as it came: its own topology and vertex count */
+                if ((unsigned)in->gs_in_prim > 2) fail(e, "pass-through geometry stage", "pass-through of an adjacency primitive (class %d)", in->gs_in_prim);
+                else { static const char *const pass_ot[3] = {"points", "line_strip", "triangle_strip"}; ot = pass_ot[in->gs_in_prim]; maxv = pass_nv[in->gs_in_prim]; inv = 1; }
+                e->in_attr |= in->force_out;       /* the next stage's inputs come from the vertex stage, through */
+            }
             if (!ot) fail(e, "geometry output topology", "output topology %u", topo);
             emit(&h, "layout(%s) in;\n", prim[(unsigned)in->gs_in_prim % 5]);
             if (inv > 1) emit(&h, "layout(invocations = %u) in;\n", inv > 32 ? 32 : inv);
@@ -2076,6 +2101,19 @@ int mx_translate(const MxIn *in, MxOut *out) {
             if (in->wide) emit(&h, " if (mx_wide != 1.0 && abs(gl_Position.w - 1.0) <= 1e-5 && abs(abs(gl_Position.x) - 1.0) > 0.002 && abs(abs(gl_Position.x) - 3.0) > 0.002) gl_Position.x *= mx_wide;");      /* ultrawide, as a vertex stage's end */
             for (unsigned n = 0; n < 32; n++) if (fill >> n & 1) emit(&h, " out_attr%u = vec4(0.0, 0.0, 0.0, 1.0);", n);
             emit(&h, "\n");
+            if (e->gs_pass && (unsigned)in->gs_in_prim <= 2) {
+                emit(&h, "int mx_layer = 0, mx_vpi = 0;\n");
+                for (unsigned n = 0; n < 32; n++) if (e->pass_written >> n & 1) emit(&h, "vec4 mx_pa%u = vec4(0.0, 0.0, 0.0, 1.0);\n", n);
+                emit(&h, "#define MX_GS_PASS for (int mx_v = 0; mx_v < %u; mx_v++) { gl_Position = gl_in[mx_v].gl_Position; gl_PointSize = gl_in[mx_v].gl_PointSize;", pass_nv[in->gs_in_prim]);
+                for (unsigned n = 0; n < 32; n++) if (e->out_attr >> n & 1) {
+                    if (e->pass_written >> n & 1) emit(&h, " out_attr%u = mx_pa%u;", n, n);
+                    else if (e->in_attr >> n & 1) emit(&h, " out_attr%u = in_attr%u[mx_v];", n, n);
+                    else emit(&h, " out_attr%u = vec4(0.0, 0.0, 0.0, 1.0);", n);
+                }
+                if (e->uses_layer_out) emit(&h, " gl_Layer = mx_layer;");
+                if (e->uses_vp_out) emit(&h, " gl_ViewportIndex = mx_vpi;");
+                emit(&h, " EmitVertex(); } EndPrimitive();\n");
+            }
         }
         if (in->stage == MX_COMPUTE) {
             {   unsigned k = mx_split_x(in->local_size, in->smem_bytes), lx = in->local_size[0] ? in->local_size[0] : 1;      /* a split group (mx_translate.h) */

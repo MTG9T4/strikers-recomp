@@ -2,7 +2,7 @@
 
 python -I tools/audit/audio_summary.py build/run/a03-*.log [--stalls]
 
-Reads the end-of-run lines of nnaudio.c (underruns, starved appends, latency, late appends, explained stretches) and
+Reads the end-of-run lines of nnaudio.c (underruns, filled gaps, starved appends, latency, late appends, explained stretches) and
 nnhid.c (input timing). --stalls also lists every 'nn::audio stall' line with the producer's time not on a CPU.
 """
 import argparse
@@ -17,6 +17,11 @@ def summary(path):
     if m:
         r.update(underruns=int(m[1]), underrun_ms=float(m[2]), longest_ms=float(m[3]))
     m = re.search(r'buffers appended, (\d+) released', t)
+    m = re.search(r'gaps filled \(.*?low-water mark (\d+) ms, now (\d+) ms after (\d+) late fills\): (\d+) fills, ([\d.]+) ms in all, '
+                  r'longest run ([\d.]+) ms, (\d+) faded to silence', t)
+    if m:                                                       # concealment (nnaudio.c, 2026-11-21)
+        r.update(fills=int(m[4]), fill_ms=float(m[5]), fill_run_ms=float(m[6]), faded=int(m[7]),
+                 low_water=f'{m[1]}->{m[2]}ms', late_fills=int(m[3]))
     m = re.search(r'the output had no samples left\): (\d+) of (\d+)', t)
     if m:
         r.update(starved=int(m[1]), appends=int(m[2]))

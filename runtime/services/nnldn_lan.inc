@@ -10,6 +10,7 @@
 #include "network_policy.h"
 #include "ldn_lan.h"
 #include "zt_transport.h"
+#include "relay_transport.h"
 #include "net_sim.h"
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
@@ -65,6 +66,7 @@ static void lan_state(int s) {
 }
 static int lan_local_source(uint32_t ip) {
     if(zt_requested())return zt_endpoint(ip);
+    if(RELAY_IS_TOKEN(ip))return relay_requested()&&relay_endpoint(ip); /* internet rooms: a relay session token */
     if((ip>>24)==127) return 1;
     return (L.interface_ip>>24)!=127 && ip!=L.broadcast && ip!=0 &&
         (ip&L.interface_mask)==(L.interface_ip&L.interface_mask);
@@ -79,8 +81,17 @@ static int lan_raw_send(uint32_t ip,uint16_t port,const void *data,unsigned size
         if(ip==0xffffffffu){zt_discover(L.base_port,data,size);return (int)size;}
         return zt_send(ip,port,data,size);
     }
+    if(RELAY_IS_TOKEN(ip))return relay_requested()?relay_send(ip,data,size):-1;
     struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_addr.s_addr=htonl(ip);a.sin_port=htons(port);
     return sendto(L.fd,data,size,0,(const struct sockaddr*)&a,sizeof a);
+}
+static unsigned lan_frame(uint8_t *b,int type,const void *body,unsigned size,uint32_t src,uint32_t dst,uint16_t sport,uint16_t dport) {
+    memset(b,0,LDN_WIRE_HEADER); memcpy(b,"SLDN",4);
+    lp16(b+4,LDN_WIRE_VERSION); lp16(b+6,(uint16_t)type); lp32(b+8,size);
+    lp64(b+12,L.build); lp64(b+20,L.id); memcpy(b+28,L.net+0x10,16);
+    lp32(b+44,src); lp32(b+48,dst); lp16(b+52,sport); lp16(b+54,dport);
+    if(size) memcpy(b+LDN_WIRE_HEADER,body,size);
+    return LDN_WIRE_HEADER+size;
 }
 static int lan_send(const struct sockaddr_in *to,int type,const void *body,unsigned size,
                     uint32_t src,uint32_t dst,uint16_t sport,uint16_t dport) {
@@ -89,17 +100,17 @@ static int lan_send(const struct sockaddr_in *to,int type,const void *body,unsig
         /* Directed broadcast is allowed only by the discovery path below. */
         if(size>LDN_MAX_DATA || L.fd==INVALID_SOCKET || ntohl(to->sin_addr.s_addr)!=L.broadcast) return -1;
     }
-    memset(b,0,LDN_WIRE_HEADER); memcpy(b,"SLDN",4);
-    lp16(b+4,LDN_WIRE_VERSION); lp16(b+6,(uint16_t)type); lp32(b+8,size);
-    lp64(b+12,L.build); lp64(b+20,L.id); memcpy(b+28,L.net+0x10,16);
-    lp32(b+44,src); lp32(b+48,dst); lp16(b+52,sport); lp16(b+54,dport);
-    if(size) memcpy(b+LDN_WIRE_HEADER,body,size);
+    lan_frame(b,type,body,size,src,dst,sport,dport);
     return net_sim_send(GetTickCount64(),ntohl(to->sin_addr.s_addr),ntohs(to->sin_port),b,LDN_WIRE_HEADER+size,lan_raw_send);
 }
 static void lan_discover(int type) {
     struct sockaddr_in a={0}; a.sin_family=AF_INET;
     uint8_t body[LDN_NI_SIZE+1];unsigned size=0;
     if(type==LP_ADVERT){memcpy(body,L.net,LDN_NI_SIZE);body[LDN_NI_SIZE]=(uint8_t)L.private_room;size=sizeof body;}
+    if(relay_requested()) { /* internet rooms: the relay lists this room, or answers a search with the rooms it lists */
+        if(type==LP_ADVERT){uint8_t frame[LDN_WIRE_HEADER+LDN_NI_SIZE+1];relay_host(frame,lan_frame(frame,LP_ADVERT,body,size,0,0,0,0));}
+        else if(type==LP_SCAN)relay_list();
+    }
     if(zt_requested()){a.sin_addr.s_addr=htonl(L.broadcast);a.sin_port=htons(L.base_port);lan_send(&a,type,body,size,0,0,0,0);return;}
     /* Unicast loopback fanout is deterministic on Windows, unlike binding
      * several processes to one SO_REUSEADDR unicast discovery socket. */
@@ -128,6 +139,7 @@ static void lan_shutdown_room(void) {
     if(L.state==LDN_CREATED) {
         for(int i=1;i<8;i++) if(L.peers[i].id) lan_send(&L.peers[i].addr,LP_DESTROY,NULL,0,0,0,0,0);
         memset(L.peers,0,sizeof L.peers); L.node=-1; lan_state(LDN_AP);
+        if(relay_requested())relay_unhost();
     } else if(L.state==LDN_CONNECTED) {
         lan_send(&L.peers[0].addr,LP_LEAVE,NULL,0,0,0,0,0); lan_leave(1);
     }
@@ -239,6 +251,7 @@ static DWORD WINAPI lan_worker(void *unused) {
         /* audit 05: wait for a datagram (libzt: poll, not a 2 ms sleep loop), at most 20 ms or until a simulated one is due */
         unsigned wait_ms=net_sim_wait(GetTickCount64(),20);
         fd_set read; FD_ZERO(&read); FD_SET(L.fd,&read); struct timeval timeout={0,(long)wait_ms*1000};
+        SOCKET relay=relay_requested()?relay_socket():INVALID_SOCKET; if(relay!=INVALID_SOCKET) FD_SET(relay,&read);
         if(zt_requested())zt_wait(wait_ms);else select(0,&read,NULL,NULL,&timeout);
         AcquireSRWLockExclusive(&L.lock);
         if(L.stop) {ReleaseSRWLockExclusive(&L.lock);break;}
@@ -251,7 +264,13 @@ static DWORD WINAPI lan_worker(void *unused) {
             if(n<0) {if(!zt_requested()&&WSAGetLastError()!=WSAEWOULDBLOCK) L.malformed++;break;}
             L.received++; lan_receive(b,(unsigned)n,&from);
         }
+        if(relay!=INVALID_SOCKET) for(int budget=0;budget<128;budget++) {
+            uint32_t token; int n=relay_recv(&token,b,sizeof b); if(n<0) break;
+            struct sockaddr_in from={0}; from.sin_family=AF_INET; from.sin_addr.s_addr=htonl(token);
+            L.received++; lan_receive(b,(unsigned)n,&from);
+        }
         uint64_t now=GetTickCount64();
+        if(relay!=INVALID_SOCKET) relay_tick(now);
         net_sim_flush(now,lan_raw_send);
         if(now-L.last_tick>=500) {
             L.last_tick=now;
@@ -338,6 +357,7 @@ static void ldn_init(Ctx *c) {
         memset(L.advertise,0,sizeof L.advertise);L.advertise_size=0;
         L.worker=CreateThread(NULL,0,lan_worker,NULL,0,NULL); if(!L.worker) ok=0;
     }
+    if(ok && relay_requested()) relay_open(L.build);
     if(ok) {lan_state(LDN_INIT);printf("[lan] initialized interface=%u.%u.%u.%u mask=%08x port=%u discovery=%u-%u identity=%016llx build=%016llx\n",L.interface_ip>>24,(L.interface_ip>>16)&255,(L.interface_ip>>8)&255,L.interface_ip&255,L.interface_mask,L.bound_port,L.base_port,L.base_port+LDN_PORT_SLOTS-1,(unsigned long long)L.id,(unsigned long long)L.build);}
     else {int error=WSAGetLastError();if(zt_requested())zt_close();else if(L.fd!=INVALID_SOCKET)closesocket(L.fd);L.fd=INVALID_SOCKET;if(L.wsa){WSACleanup();L.wsa=0;}printf("[lan] initialize failed (interface/port/Winsock error=%d)\n",error);}
     ReleaseSRWLockExclusive(&L.lock); RET(ok?0:0x2ecb);
@@ -346,7 +366,7 @@ static void ldn_finalize(Ctx *c) {
     AcquireSRWLockExclusive(&L.lock);lan_shutdown_room();L.stop=1;L.pending=0;L.answer=-1;lan_state(LDN_NONE);L.event=0;
     HANDLE thread=L.worker; L.worker=NULL; ReleaseSRWLockExclusive(&L.lock);
     if(thread) {WaitForSingleObject(thread,INFINITE);CloseHandle(thread);}
-    AcquireSRWLockExclusive(&L.lock);net_sim_clear();if(zt_requested())zt_close();else if(L.fd!=INVALID_SOCKET)closesocket(L.fd);L.fd=INVALID_SOCKET;
+    AcquireSRWLockExclusive(&L.lock);net_sim_clear();if(relay_requested())relay_close();if(zt_requested())zt_close();else if(L.fd!=INVALID_SOCKET)closesocket(L.fd);L.fd=INVALID_SOCKET;
     if(L.wsa){WSACleanup();L.wsa=0;}
     printf("[lan] finalized received=%llu malformed=%llu dropped=%llu data-tx=%llu data-rx=%llu\n",L.received,L.malformed,L.dropped,L.data_tx,L.data_rx);
     ReleaseSRWLockExclusive(&L.lock);socket_ldn_changed();RET(0);

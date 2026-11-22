@@ -310,7 +310,7 @@ static struct {
     struct { uint64_t addr, size, off; uint32_t gen, batch, wpos; } acache[8192];      /* wpos: host writes logged up to here were checked (ring_put) */
     VkBuffer zero; VMem zero_mem;
     /* pass */
-    int in_pass, pass_w, pass_h;
+    int in_pass, pass_w, pass_h, pass_layers;      /* pass_layers: the layers every attachment of the pass has (a target bound as a whole array: all of them) */
     int pass_rs; float pass_sx, pass_sy;           /* the pass draws into scaled images (pass_w, pass_h are the images'; sx, sy = image / game) */
     /* NVN state as left by the commands executed so far */
     TexPool *tpool; SamplerPool *spool;
@@ -1574,6 +1574,7 @@ static VView *vt_vview(VTex *vt, const EView *e, int dim, int attach) {
     if (attach) {
         ci.viewType = VK_IMAGE_VIEW_TYPE_2D; ci.subresourceRange.aspectMask = vt->aspect;
         ci.subresourceRange.baseMipLevel = (uint32_t)e->lvl0; ci.subresourceRange.levelCount = 1; ci.subresourceRange.baseArrayLayer = (uint32_t)e->lay0; ci.subresourceRange.layerCount = 1;
+        if (!vt->is3d && e->nlay > 1) { ci.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; ci.subresourceRange.layerCount = (uint32_t)e->nlay; }      /* layered (target_view) */
         if (vt->is3d) {   /* one depth slice of a 3D texture, through a 2D view (image made 2D_ARRAY_COMPATIBLE); the slice is the view's first layer */
             int dl = vt->d >> e->lvl0; if (dl < 1) dl = 1;
             if (e->lay0 >= dl) ci.subresourceRange.baseArrayLayer = (uint32_t)(dl - 1);
@@ -1758,11 +1759,17 @@ static void rp_drain(void) {                       /* the exit path: the reports
 #include "nvn_vk_pipelines.c"                      /* stages, pipelines, workers */
 /* ---------------------------------------------------------------- passes */
 static int target_level(const TargetRef *r) { return (r->view.set & 0x81) == 0x81 ? r->view.lvl0 : 0; }
-static VkImageView target_view(const TargetRef *r, VTex *vt) {
+/* The attachment view of a render target. A target bound as several layers of an array (the whole texture, or a view of
+ * several layers) is attached with all of them, as NVN draws it: a draw goes to its first layer unless its vertex or
+ * geometry stage picks one (gl_Layer: the game's pass-through geometry stage #260, the crowd's 64-layer pictures), and a
+ * clear clears every layer. Before, only the first layer was attached and a picked layer drew nothing. *layers: how many. */
+static VkImageView target_view(const TargetRef *r, VTex *vt, int *layers) {
     EView e;
     eview_of(r->tex, vt, &r->view, &e);
-    memset(e.swz, 0, 4); e.nlvl = 1; e.nlay = 1; e.format = r->tex->b.format; e.target = 1; e.dsmode = 0;
+    int n = vt->is3d || e.nlay < 1 ? 1 : e.nlay;
+    memset(e.swz, 0, 4); e.nlvl = 1; e.nlay = n; e.format = r->tex->b.format; e.target = n > 1 ? 4 : 1; e.dsmode = 0;
     if ((r->view.set & 0x84) == 0x84 && r->view.format) e.format = r->view.format;
+    if (layers) *layers = n;
     return vt_view(vt, &e, -1, 1);
 }
 /* A texture first used as a render target, in a memory pool the CPU cannot write (or a virtual one): what its memory holds
@@ -1778,7 +1785,7 @@ static void rt_first(Tex *t) { rt_first2(t, 0x201); }      /* drawn into or clea
 static int pass_begin(void) {
     VkRenderingAttachmentInfo ca[8], da;
     VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-    int w = 0, h = 0;
+    int w = 0, h = 0, layers = 1 << 30;           /* the fewest layers an attachment has (target_view) */
     if (R.in_pass) return 1;
     cmd_begin();
     R.pass_rs = 0;
@@ -1794,7 +1801,7 @@ static int pass_begin(void) {
         t->gpu_written = 1;
         { static uint32_t pass_no; int l = target_level(&R.col[i]); if (l >= 0 && l < 16) vt->lvl_drawn[l] = ++pass_no; }
         vt_layout(vt, vt->feedback ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        ca[i].imageView = target_view(&R.col[i], vt); ca[i].imageLayout = vt->layout;
+        { int nl; ca[i].imageView = target_view(&R.col[i], vt, &nl); ca[i].imageLayout = vt->layout; if (nl < layers) layers = nl; }
         if (!w) { w = lvl_(vt->w, target_level(&R.col[i])); h = lvl_(vt->h, target_level(&R.col[i])); if (vt->rs) { R.pass_rs = 1; R.pass_sx = vt->sx; R.pass_sy = vt->sy; } }
         {   /* TEST ONLY, STRIKERS_VK_TARGETLOG=1: every new colour target shape drawn into (game size, image size, scaled or not) */
             static int on = -1; static uint32_t seen[256]; static int ns;
@@ -1820,7 +1827,7 @@ static int pass_begin(void) {
         else {
             vt_layout(vt, vt->feedback ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
             da.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO; da.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; da.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            da.imageView = target_view(&R.depth, vt); da.imageLayout = vt->layout;
+            { int nl; da.imageView = target_view(&R.depth, vt, &nl); da.imageLayout = vt->layout; if (nl < layers) layers = nl; }
             if (vt->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) ri.pDepthAttachment = &da;
             if (vt->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) ri.pStencilAttachment = &da;
             if (!w) { w = lvl_(vt->w, target_level(&R.depth)); h = lvl_(vt->h, target_level(&R.depth)); if (vt->rs) { R.pass_rs = 1; R.pass_sx = vt->sx; R.pass_sy = vt->sy; } }
@@ -1850,7 +1857,8 @@ static int pass_begin(void) {
         }
     }
     cmd_begin();                                   /* vt_get may have submitted (ring wrap) */
-    ri.renderArea.extent.width = (uint32_t)w; ri.renderArea.extent.height = (uint32_t)h; ri.layerCount = 1; ri.colorAttachmentCount = (uint32_t)R.ncol; ri.pColorAttachments = ca;
+    R.pass_layers = layers == 1 << 30 ? 1 : layers;
+    ri.renderArea.extent.width = (uint32_t)w; ri.renderArea.extent.height = (uint32_t)h; ri.layerCount = (uint32_t)R.pass_layers; ri.colorAttachmentCount = (uint32_t)R.ncol; ri.pColorAttachments = ca;
     vkCmdBeginRendering(R.cmd, &ri);
     g_fr_passes++;
     R.in_pass = 1; R.pass_w = w; R.pass_h = h;
@@ -2937,10 +2945,11 @@ static int draw_prepare(unsigned prim) {
         static int want = -2;
         want = passshot_drawlog() ? 1 : -1;
         if (want >= 0) {
-            for (int i = 0; i < 4 && i < R.nattr; i++) {
+            for (int i = 0; i < 16 && i < R.nattr; i++) {
                 uint32_t a = R.vattr[i]; int st = (int)((a >> 8) & 31);
                 if (!(a & 0xff)) continue;
-                printf("nvn_vk_vtx:   attr %d fmt 0x%x stream %d offset %u stride %u addr %llx size %llx", i, a & 0xff, st, a >> 14, st < 32 ? R.vstream[st].stride : 0, (unsigned long long)(st < 16 ? R.vbuf[st].addr : 0), (unsigned long long)(st < 16 ? R.vbuf[st].size : 0));
+                printf("nvn_vk_vtx:   attr %d fmt 0x%x stream %d offset %u stride %u divisor %u addr %llx size %llx", i, a & 0xff, st, a >> 14, st < 32 ? R.vstream[st].stride : 0,
+                       st < 32 ? R.vstream[st].divisor : 0, (unsigned long long)(st < 16 ? R.vbuf[st].addr : 0), (unsigned long long)(st < 16 ? R.vbuf[st].size : 0));
                 if (i == 0 && st < 16 && R.vbuf[st].addr && (a & 0xff) >= 0x1f && (a & 0xff) <= 0x24 + 12) {
                     const float *fp = (const float *)P(R.vbuf[st].addr + (a >> 14));
                     uint32_t sd = R.vstream[st].stride ? R.vstream[st].stride / 4 : 4;
@@ -2957,6 +2966,13 @@ static int draw_prepare(unsigned prim) {
                     }
                     printf("nvn_vk_mesh: %llu vertices, bounds (%g %g %g)..(%g %g %g)\n", (unsigned long long)count, lo[0],lo[1],lo[2],hi[0],hi[1],hi[2]);
                 }
+            }
+            for (int k = 0; k < 8; k++) {          /* the vertex stage's storage buffers: where the game put them, and the first values */
+                Range r = R.ssbo[0][k];
+                if (!r.addr && !r.size) continue;
+                printf("nvn_vk_ssbo:  vertex slot %d addr %llx size %llx%s", k, (unsigned long long)r.addr, (unsigned long long)r.size, vs && (vs->ssbos >> k & 1) ? " (read by the stage)" : "");
+                if (r.addr && r.size >= 48) { const float *fp = (const float *)P(r.addr); printf(" | %g %g %g %g  %g %g %g %g  %g %g %g %g", fp[0], fp[1], fp[2], fp[3], fp[4], fp[5], fp[6], fp[7], fp[8], fp[9], fp[10], fp[11]); }
+                printf("\n");
             }
         }
     }
@@ -3531,6 +3547,7 @@ static void vk_draw_arrays(unsigned prim, uint32_t first, uint32_t count, uint32
     vtx_switches();
     if (count) vtx_need((uint64_t)first + count - 1, inst ? (uint64_t)base_inst + inst - 1 : (uint64_t)base_inst, 0); else memset(g_vneed, 0, sizeof g_vneed);
     { LONG64 t0 = tk(); int ok = draw_prepare(prim); g_tm[8] += tk() - t0; if (!ok) { R.frame_skipped++; nvn_front_count(1, 1); return; } }
+    if (passshot_drawlog()) printf("nvn_vk_count:   arrays: %u vertices from %u, %u instances from %u\n", count, first, inst, base_inst);
     occ_draw();
     if (R.prog[2]) gsq_begin();
     vkCmdDraw(R.cmd, count, inst, first, base_inst);
@@ -3554,6 +3571,7 @@ static void vk_draw_elements(unsigned prim, unsigned type, int count, uint64_t i
         vtx_need(mv > 0 ? (uint64_t)mv : 0, inst ? (uint64_t)base_inst + inst - 1 : (uint64_t)base_inst, 1); }
     { LONG64 t0 = tk(); int ok = draw_prepare(prim); g_tm[8] += tk() - t0; if (!ok) { R.frame_skipped++; nvn_front_count(1, 1); return; } }
     vkCmdBindIndexBuffer(R.cmd, ib.buf, ib.off, t == 0 ? VK_INDEX_TYPE_UINT8_EXT : t == 1 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
+    if (passshot_drawlog()) printf("nvn_vk_count:   elements: %d indices, base vertex %d, %u instances from %u\n", count, base_vertex, inst, base_inst);
     occ_draw();
     vkCmdDrawIndexed(R.cmd, (uint32_t)count, inst, 0, base_vertex, base_inst);
     material_trace(prim,0,(uint32_t)count,type,indices,base_vertex,base_inst,inst);
@@ -3764,7 +3782,7 @@ static void exec(const Cmd *m, int depth) {
         if (sw <= 0 || sh <= 0) break;
         memset(&ca, 0, sizeof ca); memset(&cr, 0, sizeof cr);
         ca.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; ca.colorAttachment = i; memcpy(&ca.clearValue.color, blob, 16);
-        cr.rect.offset.x = sx; cr.rect.offset.y = sy; cr.rect.extent.width = (uint32_t)sw; cr.rect.extent.height = (uint32_t)sh; cr.layerCount = 1;
+        cr.rect.offset.x = sx; cr.rect.offset.y = sy; cr.rect.extent.width = (uint32_t)sw; cr.rect.extent.height = (uint32_t)sh; cr.layerCount = (uint32_t)R.pass_layers;      /* every layer of a layered target (target_view) */
         vkCmdClearAttachments(R.cmd, 1, &ca, 1, &cr);
         R.frame_clears++; nvn_front_count(2, 1);
         break;
@@ -3791,7 +3809,7 @@ static void exec(const Cmd *m, int depth) {
         ca.aspectMask &= vt->aspect;
         if (!ca.aspectMask) break;
         memcpy(&ca.clearValue.depthStencil.depth, &a[3], 4); ca.clearValue.depthStencil.stencil = (uint32_t)a[1];
-        cr.rect.offset.x = sx; cr.rect.offset.y = sy; cr.rect.extent.width = (uint32_t)sw; cr.rect.extent.height = (uint32_t)sh; cr.layerCount = 1;
+        cr.rect.offset.x = sx; cr.rect.offset.y = sy; cr.rect.extent.width = (uint32_t)sw; cr.rect.extent.height = (uint32_t)sh; cr.layerCount = (uint32_t)R.pass_layers;      /* every layer of a layered target (target_view) */
         vkCmdClearAttachments(R.cmd, 1, &ca, 1, &cr);
         R.frame_clears++; nvn_front_count(2, 1);
         break;

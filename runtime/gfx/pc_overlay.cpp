@@ -12,6 +12,7 @@
 #include "pc_controls.h"
 #include "../services/zt_transport.h"
 #include "../services/group_client.h"
+#include "../services/relay_transport.h"
 #include "../fs/save_import.h"
 #include "imgui.h"
 #include "backends/imgui_impl_win32.cpp"
@@ -24,6 +25,10 @@ extern "C" int nnaudio_volume(void);
 extern "C" void nnaudio_set_volume(int percent);
 extern "C" int nnpad_kb_vk(int idx);
 extern "C" int bug_report_message(char *out, size_t n);
+extern "C" int bug_report_submit(const char *description, int screenshot, int crash);
+extern "C" int bug_report_send_state(char *out, size_t n);
+extern "C" int bug_report_can_send(void);
+extern "C" int bug_report_recent_crash(void);
 extern "C" double vk_gpu_ns_total(void);
 extern "C" int mods_all(char names[][128], int *on, int max);      /* fs/mods.c */
 extern "C" void mods_set(const char *name, int on);
@@ -303,6 +308,7 @@ static void draw_main_menu(int mode, unsigned width, unsigned height) {
     if(upd)snprintf(line,sizeof line,"Version %s is ready: choose UPDATE (about %d min). Your saves and settings stay.",upd_version,upd_minutes);
     else if(group.configured&&group.joined)group_connection(line,sizeof line);
     else if(group.configured)snprintf(line,sizeof line,"Online: choose ONLINE to join your group with an invite code.");
+    else if(zt_relay_mode())snprintf(line,sizeof line,"Local Wireless: rooms on your network and on the internet, nothing to set up.");
     else if(zt_lan_mode())snprintf(line,sizeof line,"Local Wireless: PCs on the same network see each other's rooms.");
     else snprintf(line,sizeof line,"Online is not set up in strikers.ini.");
     bg->AddText(sf,ss*0.9f,ImVec2(x,H-120*s),IM_COL32(255,224,120,255),line);
@@ -473,10 +479,30 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
                 }
                 ZtStatus s;zt_status(&s);
                 if(zt_lan_mode()) {
-                    ImGui::SeparatorText("Same network (LAN)");
-                    ImGui::TextWrapped("Local Wireless plays with PCs on the same home network: no accounts and nothing to set up. One player creates a room in Quick Battle > Local Wireless, and the others choose it from the list. Everyone needs the same release version.");
-                    ImGui::TextWrapped("If Windows asks whether to allow the game on networks, allow it on private networks.");
-                    ImGui::TextDisabled("To play over the internet with a group, use the strikers.ini your organizer sends (mode = zerotier with its service and invite code).");
+                    ImGui::SeparatorText("Local Wireless");
+                    ImGui::TextWrapped("Open Quick Battle > Local Wireless. One player creates a room and the others choose it from the list. No accounts and nothing to set up. Everyone needs the same release version.");
+                    if(zt_relay_mode()) {
+                        ImGui::TextWrapped("Rooms from PCs on your network and from the internet show up in the same list.");
+                        ImGui::SeparatorText("Internet rooms");
+                        RelayStatus r;relay_status(&r);
+                        static const char *const states[]={"Waiting for Local Wireless","Connecting","Connected","Not reachable"};
+                        const char *state=states[r.state>=0&&r.state<4?r.state:0];
+                        if(r.state==2&&r.ping_ms>=0)ImGui::Text("%s  |  ping %d ms",state,r.ping_ms);else ImGui::TextUnformatted(state);
+                        ImGui::TextWrapped("%s",r.message);
+                        ImGui::InputText("Room key",edit.room_key,sizeof edit.room_key);
+                        char current[64];relay_room_key(current,sizeof current);
+                        ImGui::SameLine();ImGui::BeginDisabled(!strcmp(current,edit.room_key));
+                        if(ImGui::Button("Use this key")) {
+                            relay_set_room_key(edit.room_key);saved=gfx_options_save(&edit)!=0;
+                            printf("pc-settings: room key %s, save %s\n",edit.room_key[0]?"set":"cleared",saved?"OK":"FAILED");
+                        }
+                        ImGui::EndDisabled();
+                        ImGui::TextWrapped("Empty: you see everyone's internet rooms. Friends who all type the same key (any word you agree on) see only each other's rooms. Then search for rooms again.");
+                    }
+                    bool internet=!_stricmp(edit.network_mode,"internet");
+                    if(ImGui::Checkbox("Internet rooms (restart)",&internet))snprintf(edit.network_mode,sizeof edit.network_mode,"%s",internet?"internet":"lan");
+                    ImGui::TextWrapped("If Windows asks whether to allow the game on networks, allow it on private networks. That is for rooms on your own network; internet rooms need nothing.");
+                    ImGui::TextDisabled("Internet rooms go through the project's relay server. It sees your IP address and the room's game traffic, and keeps no record of IP addresses.");
                 }
                 else if(!group.configured||ImGui::CollapsingHeader("Connection details")) {
                 const char *states[]={"Offline","Joining","Connected","Waiting for authorization","Connection error"};
@@ -495,6 +521,36 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
                     ImGui::SameLine();if(s.peer[i].latency>=0)ImGui::Text("| %d ms",s.peer[i].latency);else ImGui::TextUnformatted("| Latency unknown");
                 }
                 ImGui::TextWrapped("A peer seen here may not have joined your room. Anyone can host: open Quick Battle > Local Wireless and create a room. Friends choose that room from the list.");
+                }
+                ImGui::EndTabItem();
+            }
+            bool report_tab=ImGui::BeginTabItem("Report");ui_item("tab Report");
+            if(report_tab) {
+                /* F1 > Report: a report sent to the developer, only when the player presses Send (core/bug_report.c) */
+                static char what[1001];static bool shot=true,crash=false,first=true;
+                bool recent=bug_report_recent_crash()!=0;
+                if(first){crash=recent;first=false;}
+                if(!bug_report_can_send()) {
+                    ImGui::TextWrapped("Sending reports is turned off in this copy (report_url in strikers.ini). F9 saves a report in userdata\\reports that you can attach to a report on RecompLauncher or GitHub.");
+                } else {
+                    ImGui::TextWrapped("Something wrong? Send a report to the developer. It helps to say what you were doing and what went wrong.");
+                    ImGui::InputTextMultiline("##what",what,sizeof what,ImVec2(-1,110*dpi));
+                    ImGui::TextDisabled("What happened? (optional)");
+                    ImGui::Checkbox("Include a screenshot of the game",&shot);
+                    if(recent)ImGui::Checkbox("Include the last crash report (a memory snapshot of the game when it crashed)",&crash);
+                    ImGui::SeparatorText("What is sent");
+                    ImGui::TextWrapped("Your description, the game's logs of this run and the one before, your processor, graphics card, Windows version and memory, and your controller and strikers.ini settings with the invite code and room key removed%s%s. Your Windows user name and PC name are taken out of file paths. Nothing is sent until you press Send report.",
+                                       shot?", a screenshot":"",recent&&crash?", the crash report":"");
+                    char status[400];int state=bug_report_send_state(status,sizeof status);
+                    ImGui::BeginDisabled(state==1);
+                    if(ImGui::Button("Send report")&&bug_report_submit(what,shot?1:0,recent&&crash?1:0)) {
+                        printf("pc-settings: report submitted (screenshot %d, crash %d)\n",shot?1:0,recent&&crash?1:0);
+                        what[0]=0;
+                        if(shot)pc_settings_toggle();     /* the menu closes, so the screenshot shows the game; the result shows as a note */
+                    }
+                    ImGui::EndDisabled();ui_item("send report");
+                    if(state)ImGui::TextWrapped("%s",status);
+                    ImGui::TextDisabled("F9 saves the same report on this PC only.");
                 }
                 ImGui::EndTabItem();
             }
@@ -682,7 +738,7 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
         ImGui::SetNextWindowPos(ImVec2(20*ui_dpi,height*0.075f),ImGuiCond_Always);      /* under the start screen's header bar */
         ImGui::SetNextWindowSize(ImVec2(fminf(560*ui_dpi,width-40*ui_dpi),0));
         if(font_body)ImGui::PushFont(font_body);
-        ImGui::Begin("Bug report (F9)",nullptr,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoFocusOnAppearing|ImGuiWindowFlags_NoInputs);
+        ImGui::Begin("Report",nullptr,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoFocusOnAppearing|ImGuiWindowFlags_NoInputs);
         ImGui::TextWrapped("%s",report);
         ImGui::End();
         if(font_body)ImGui::PopFont();

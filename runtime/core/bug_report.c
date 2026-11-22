@@ -8,7 +8,10 @@
  *    with screenshot.jpg (at most 1920 wide), system.txt, the log so far, the run before, strikers.ini (invite code
  *    removed), controllers.ini and the newest crash report. With no frame within two seconds (another renderer, or the
  *    game not drawing) the report is written without the picture. The PC overlay shows where it went.
- * Nothing is sent anywhere: the player chooses whether to pass the file on. */
+ *  - F1 > Report -> bug_report_submit(): the same report with the player's description, sent to the developer's report
+ *    service (report_send.c) once it is written. Only then is anything sent; F9 alone never sends.
+ * Every text file of a report has the Windows account and PC name taken out of it (report_redact_file), and strikers.ini
+ * its private values (report_copy_settings). */
 #define COBJMACROS
 #include <windows.h>
 #include <wincodec.h>
@@ -16,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "report_send.h"
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
@@ -174,60 +178,97 @@ static int copy_shared(const char *from, const char *to) {
     return ok;
 }
 
-/* strikers.ini with the private invite code blanked. */
-static void copy_settings(const char *from, const char *to) {
-    FILE *in = fopen(from, "rb"); if (!in) return;
-    FILE *out = fopen(to, "wb"); if (!out) { fclose(in); return; }
-    char line[1024];
-    while (fgets(line, sizeof line, in)) {
-        const char *p = line; while (*p == ' ' || *p == '\t') p++;
-        if (!_strnicmp(p, "group_code", 10) && strchr(p, '=')) { const char *eq = strchr(p, '=');
-            fprintf(out, "%.*s= (removed from the report)\r\n", (int)(eq - line), line); }
-        else fputs(line, out);
-    }
-    fclose(in); fclose(out);
-}
-
-static void newest(const char *dir, const char *pattern, char *out, size_t n) {
+/* The newest file matching pattern in dir; its age in hours (or -1 with none). */
+static double newest(const char *dir, const char *pattern, char *out, size_t n) {
     char find[MAX_PATH]; WIN32_FIND_DATAA d; FILETIME best = {0, 0};
     out[0] = 0;
     snprintf(find, sizeof find, "%s\\%s", dir, pattern);
-    HANDLE h = FindFirstFileA(find, &d); if (h == INVALID_HANDLE_VALUE) return;
+    HANDLE h = FindFirstFileA(find, &d); if (h == INVALID_HANDLE_VALUE) return -1;
     do {
         if (d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
         if (CompareFileTime(&d.ftLastWriteTime, &best) > 0) { best = d.ftLastWriteTime; snprintf(out, n, "%s\\%s", dir, d.cFileName); }
     } while (FindNextFileA(h, &d));
     FindClose(h);
+    if (!out[0]) return -1;
+    FILETIME now; GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER a, b; a.LowPart = now.dwLowDateTime; a.HighPart = now.dwHighDateTime; b.LowPart = best.dwLowDateTime; b.HighPart = best.dwHighDateTime;
+    return a.QuadPart > b.QuadPart ? (double)(a.QuadPart - b.QuadPart) / 36e9 : 0;
+}
+
+/* strikers.ini: the file the launcher names, else the one beside the game. */
+static void settings_path(char *out, size_t n) {
+    const char *p = getenv("STRIKERS_PC_CONFIG");
+    if (p && *p) { snprintf(out, n, "%s", p); return; }
+    own_folder(out, n); strncat(out, "\\strikers.ini", n - strlen(out) - 1);
+}
+
+/* What the next report does (set before its worker starts; one report at a time). */
+static struct { int send, screenshot, crash; char kind[8], description[1001]; } g_job;
+static volatile LONG g_send_state;       /* 0 none yet, 1 sending, 2 sent, 3 not sent */
+static char g_send_message[400];
+
+/* A crash report from the last two days (F1's "Include the last crash report" starts ticked). */
+int bug_report_recent_crash(void) {
+    char crashes[MAX_PATH], found[MAX_PATH]; snprintf(crashes, sizeof crashes, "%s\\crashes", fs_user_root());
+    double age = newest(crashes, "*.txt", found, sizeof found);
+    return age >= 0 && age < 48;
+}
+
+static void json_escaped(FILE *f, const char *s) {
+    for (; *s; s++) {
+        if (*s == '"' || *s == '\\') fprintf(f, "\\%c", *s);
+        else if (*s == '\n') fputs("\\n", f); else if (*s == '\r') {} else if ((unsigned char)*s < 32) fputc(' ', f);
+        else fputc(*s, f);
+    }
 }
 
 static DWORD WINAPI report_worker(void *unused) {
     (void)unused;
-    WaitForSingleObject(g_frame_ready, 2000);
+    if (g_job.screenshot) WaitForSingleObject(g_frame_ready, 2000);
     InterlockedExchange(&g_state, 2);
     const char *user = fs_user_root();
-    char reports[MAX_PATH], dir[MAX_PATH], zip[MAX_PATH], path[MAX_PATH], from[MAX_PATH], folder[MAX_PATH], name[64];
+    char reports[MAX_PATH], dir[MAX_PATH], zip[MAX_PATH], path[MAX_PATH], from[MAX_PATH], ini[MAX_PATH], name[64];
     SYSTEMTIME t; GetLocalTime(&t);
     snprintf(name, sizeof name, "report-%04u%02u%02u-%02u%02u%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
     snprintf(reports, sizeof reports, "%s\\reports", user); CreateDirectoryA(reports, NULL);
     snprintf(dir, sizeof dir, "%s\\%s", reports, name); CreateDirectoryA(dir, NULL);
-    own_folder(folder, sizeof folder);
+    settings_path(ini, sizeof ini);
     int picture = 0;
-    if (g_px) { snprintf(path, sizeof path, "%s\\screenshot.jpg", dir); picture = write_jpeg(path, g_px, g_w, g_h); free(g_px); g_px = NULL; }
+    if (g_px) { if (g_job.screenshot) { snprintf(path, sizeof path, "%s\\screenshot.jpg", dir); picture = write_jpeg(path, g_px, g_w, g_h); } free(g_px); g_px = NULL; }
     char summary[700]; system_summary(summary, sizeof summary);
     snprintf(path, sizeof path, "%s\\system.txt", dir);
     FILE *f = fopen(path, "wb");
     if (f) {
-        fprintf(f, "%s\r\nReport made %04u-%02u-%02u %02u:%02u:%02u with F9%s.\r\n", summary, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
-                picture ? "" : " (no screenshot: the game was not drawing)");
+        fprintf(f, "%s\r\nReport made %04u-%02u-%02u %02u:%02u:%02u with %s%s.\r\n", summary, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
+                g_job.send ? "F1 > Report" : "F9", picture ? "" : g_job.screenshot ? " (no screenshot: the game was not drawing)" : " (no screenshot)");
         fclose(f);
     }
-    snprintf(from, sizeof from, "%s\\last-game.log", user); snprintf(path, sizeof path, "%s\\last-game.log", dir); copy_shared(from, path);
-    snprintf(from, sizeof from, "%s\\previous-game.log", user); snprintf(path, sizeof path, "%s\\previous-game.log", dir); copy_shared(from, path);
-    snprintf(from, sizeof from, "%s\\controllers.ini", user); snprintf(path, sizeof path, "%s\\controllers.ini", dir); copy_shared(from, path);
-    snprintf(from, sizeof from, "%s\\strikers.ini", folder); snprintf(path, sizeof path, "%s\\strikers.ini", dir); copy_settings(from, path);
-    char crashes[MAX_PATH]; snprintf(crashes, sizeof crashes, "%s\\crashes", user);
-    newest(crashes, "*", from, sizeof from);
-    if (from[0]) { const char *leaf = strrchr(from, '\\'); snprintf(path, sizeof path, "%s\\%s", dir, leaf ? leaf + 1 : "crash"); copy_shared(from, path); }
+    snprintf(path, sizeof path, "%s\\report.json", dir);
+    if ((f = fopen(path, "wb"))) {
+        fprintf(f, "{\"kind\":\"%s\",\"made\":\"%04u-%02u-%02uT%02u:%02u:%02u\",\"description\":\"", g_job.kind, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        json_escaped(f, g_job.description); fputs("\"}\r\n", f); fclose(f);
+    }
+    static const char *const texts[] = {"last-game.log", "previous-game.log", "controllers.ini"};
+    for (int i = 0; i < 3; i++) {
+        snprintf(from, sizeof from, "%s\\%s", user, texts[i]); snprintf(path, sizeof path, "%s\\%s", dir, texts[i]);
+        if (copy_shared(from, path)) report_redact_file(path, 16u << 20);
+    }
+    snprintf(path, sizeof path, "%s\\strikers.ini", dir);
+    if (report_copy_settings(ini, path)) report_redact_file(path, 0);
+    snprintf(path, sizeof path, "%s\\system.txt", dir); report_redact_file(path, 0);
+    if (g_job.crash) {    /* the newest crash: its .txt (redacted) and the .dmp of the same name */
+        char crashes[MAX_PATH]; snprintf(crashes, sizeof crashes, "%s\\crashes", user);
+        if (newest(crashes, "*.txt", from, sizeof from) >= 0) {
+            const char *leaf = strrchr(from, '\\'); leaf = leaf ? leaf + 1 : "crash.txt";
+            snprintf(path, sizeof path, "%s\\%s", dir, leaf);
+            if (copy_shared(from, path)) report_redact_file(path, 0);
+            size_t fl = strlen(from), pl = strlen(path);
+            if (fl > 4 && pl > 4) { memcpy(from + fl - 4, ".dmp", 4); memcpy(path + pl - 4, ".dmp", 4); copy_shared(from, path); }
+        }
+    }
+    ReportInfo info; memset(&info, 0, sizeof info);
+    snprintf(path, sizeof path, "%s\\last-game.log", dir); report_info_from_log(path, &info);
+    snprintf(info.kind, sizeof info.kind, "%s", g_job.kind); snprintf(info.description, sizeof info.description, "%s", g_job.description);
     /* one file to send: Windows' own tar writes zip archives (-a picks the format from the name) */
     snprintf(zip, sizeof zip, "%s\\%s.zip", reports, name);
     char tar[MAX_PATH], cmd[3 * MAX_PATH];
@@ -238,29 +279,75 @@ static DWORD WINAPI report_worker(void *unused) {
     if (CreateProcessA(tar, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, reports, &si, &p)) {
         WaitForSingleObject(p.hProcess, 60000); GetExitCodeProcess(p.hProcess, &code); CloseHandle(p.hThread); CloseHandle(p.hProcess);
     }
-    if (code == 0 && GetFileAttributesA(zip) != INVALID_FILE_ATTRIBUTES) {
+    char shown[160];
+    int zipped = code == 0 && GetFileAttributesA(zip) != INVALID_FILE_ATTRIBUTES;
+    if (zipped) {
         WIN32_FIND_DATAA d; char find[MAX_PATH]; snprintf(find, sizeof find, "%s\\*", dir);
         HANDLE h = FindFirstFileA(find, &d);
         if (h != INVALID_HANDLE_VALUE) { do { if (!(d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { snprintf(path, sizeof path, "%s\\%s", dir, d.cFileName); DeleteFileA(path); } } while (FindNextFileA(h, &d)); FindClose(h); }
         RemoveDirectoryA(dir);
         printf("bug-report: %s (screenshot %s)\n", zip, picture ? "yes" : "no");
-        char shown[160]; snprintf(shown, sizeof shown, "userdata\\reports\\%s.zip", name);
-        set_message("Bug report saved in the game folder: %s. Send this file to your organizer if you choose; nothing is sent automatically.", shown);
+        snprintf(shown, sizeof shown, "userdata\\reports\\%s.zip", name);
     } else {
         printf("bug-report: %s (folder; zip failed, exit %lu)\n", dir, (unsigned long)code);
-        char shown[160]; snprintf(shown, sizeof shown, "userdata\\reports\\%s", name);
-        set_message("Bug report saved in the game folder: %s. Send it to your organizer if you choose.", shown);
+        snprintf(shown, sizeof shown, "userdata\\reports\\%s", name);
+    }
+    if (!g_job.send) {
+        set_message("Bug report saved in the game folder: %s. It stays on your PC; F1 > Report sends one to the developer.", shown);
+    } else {
+        char url[512], id[32], why[300], text[400];
+        report_url(ini, url, sizeof url);
+        int ok = zipped && report_send(url, zip, &info, id, sizeof id, why, sizeof why);
+        if (!zipped) snprintf(why, sizeof why, "The report could not be packed into one file.");
+        if (ok) snprintf(text, sizeof text, "Sent. Report ID %s. Mention it if you post about the problem on RecompLauncher or GitHub. A copy stays in %s.", id, shown);
+        else snprintf(text, sizeof text, "Not sent: %s The report was saved as %s; press Send again later, or attach that file to a report.", why, shown);
+        printf("bug-report: send %s %s\n", ok ? "OK" : "FAILED", ok ? id : why);
+        snprintf(g_send_message, sizeof g_send_message, "%s", text);
+        InterlockedExchange(&g_send_state, ok ? 2 : 3);
+        set_message("%s", text);
     }
     InterlockedExchange(&g_state, 0);
     return 0;
 }
 
-void bug_report_request(void) {
+static void start_report(const char *kind, int send, int screenshot, int crash, const char *description) {
     if (InterlockedCompareExchange(&g_state, 1, 0) != 0) return;     /* one at a time */
+    g_job.send = send; g_job.screenshot = screenshot; g_job.crash = crash;
+    snprintf(g_job.kind, sizeof g_job.kind, "%s", kind);
+    snprintf(g_job.description, sizeof g_job.description, "%s", description ? description : "");
     if (!g_frame_ready) g_frame_ready = CreateEventA(NULL, FALSE, FALSE, NULL);
     ResetEvent(g_frame_ready);
-    set_message("Saving a bug report%s", "...");
-    printf("bug-report: requested\n");
+    if (send) InterlockedExchange(&g_send_state, 1);
+    set_message(send ? "Sending a report to the developer%s" : "Saving a bug report%s", "...");
+    printf("bug-report: requested (%s)\n", kind);
+    if (!screenshot) InterlockedExchange(&g_state, 2);
     HANDLE h = CreateThread(NULL, 0, report_worker, NULL, 0, NULL);
-    if (h) CloseHandle(h); else InterlockedExchange(&g_state, 0);
+    if (h) CloseHandle(h);
+    else {
+        InterlockedExchange(&g_state, 0);
+        if (send) { snprintf(g_send_message, sizeof g_send_message, "Not sent: the report could not start."); InterlockedExchange(&g_send_state, 3); }
+    }
+}
+
+/* F9: saved on this PC only, with a screenshot and the newest crash report. */
+void bug_report_request(void) { start_report("f9", 0, 1, 1, NULL); }
+
+/* F1 > Report > Send report: written like F9's, then sent. Returns 0 while another report is being made. */
+int bug_report_submit(const char *description, int screenshot, int crash) {
+    if (g_state != 0) return 0;
+    start_report("menu", 1, screenshot, crash, description);
+    return 1;
+}
+
+/* For F1's Report tab: 0 nothing sent yet, 1 sending, 2 sent, 3 not sent; the last result in plain words. */
+int bug_report_send_state(char *out, size_t n) {
+    int s = (int)g_send_state;
+    if (out && n) snprintf(out, n, "%s", s == 1 ? "Sending..." : g_send_message);
+    return s;
+}
+
+/* report_url for F1: whether this copy can send at all (report_url = off, or no service built in). */
+int bug_report_can_send(void) {
+    char ini[MAX_PATH], url[512]; settings_path(ini, sizeof ini); report_url(ini, url, sizeof url);
+    return url[0] != 0;
 }

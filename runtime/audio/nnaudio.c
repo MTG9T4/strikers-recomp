@@ -31,6 +31,8 @@
  * Host side: every appended buffer is copied (6 channels are mixed down to stereo) and handed to waveOut at once.
  * A buffer is "released" when the device has finished playing its copy, in the order it was appended; the
  * guest's event is signalled then. Without an output device the buffers are released by the clock instead.
+ * When the game falls behind real time, the gaps are filled from its recent sound (gap concealment, see g_conceal);
+ * a buffer may then be released up to 20 ms before its copy has played.
  *
  * Environment: STRIKERS_AUDIO_WAV=<file>    stereo PCM16 capture before host device volume; off by default
  *              STRIKERS_AUDIO_WAV_SECONDS=n optional sample-exact limit (otherwise RIFF size limit)
@@ -39,6 +41,7 @@
  *                                       then does its own mix-down, as on a console set to stereo output)
  *              STRIKERS_AUDIO_LOG=1         print the statistics every second instead of every 10 s
  *              STRIKERS_AUDIO_MUTE=1        no host device (clock-driven)
+ *              STRIKERS_AUDIO_CONCEAL=<ms>  gap concealment's starting low-water mark (default 12; 0 = off, as before)
  *              STRIKERS_AUDIO_TONE=1        add a quiet 440 Hz test tone to the first second (checks the host path)
  *              STRIKERS_OPUS_DLL=<file>     libopus DLL for the Opus decoder (default libopus-0.dll, then MSYS2's)
  *
@@ -101,6 +104,8 @@ typedef struct {
     LONGLONG due;                                     /* clock-driven mode: when it has been "played" */
     unsigned frames;
     int prepared;
+    int given;                                        /* the guest's buffer was given back (before its header finished: credit) */
+    unsigned long long end_pos;                       /* device frames submitted up to the end of this slot */
 } Slot;
 
 static CRITICAL_SECTION g_lock;
@@ -157,6 +162,46 @@ static unsigned g_queue_max;
  * reached the end of everything handed to it: the output really ran out of samples (waveOut marks a buffer "done" when
  * its own pipeline has taken it, which can be earlier than the moment it is heard). */
 static unsigned long long g_frames_submitted, g_starved;
+/* Gap concealment (2026-11-21, player report on a Ryzen Z1 Extreme: the game ran at 56-58 fps, CPU-bound, so Wwise
+ * mixed only 93-96% of real time and the device ran dry 681 times, 7.4 s in all; every dry spell is a gap plus a click
+ * at each end). The output now holds back the newest CONCEAL_XFADE frames of the game's stream. When the device's play
+ * position comes within g_low frames of the end of what it was given (waveOut marks the last header done only once it
+ * has been played, measured on Windows 11, so an empty header queue is already too late), the audio thread queues a
+ * host-only "fill" header: the last L frames again (L = 5..20 ms, picked by correlation so the loop point lines up with the held-back tail, i.e. a
+ * pitch-synchronous repeat), entered through a raised-cosine crossfade from the tail. The fill ends exactly where the
+ * tail begins, so the game's next buffer continues it without a seam. A fill that goes on (the game stalled) keeps full
+ * gain for CONCEAL_FULL frames, then fades to silence over CONCEAL_FADE; after a fade the game's audio ramps back in
+ * over CONCEAL_RAMP. The low-water mark starts at 12 ms (a 10 ms Windows engine period and the 2 ms check) and rises by
+ * 4 ms, to 40 at most, each time a fill came too late (the device had played everything): devices with longer periods
+ * tune it themselves. Latency: the device keeps about g_low queued, and a fill (at most 20 ms) plus 2.7 ms ride on the
+ * game's own queue. Never on the game's thread: the guest-side check only wakes the audio thread.
+ * STRIKERS_AUDIO_CONCEAL=<ms> sets the starting low-water mark (default 12; 0 = off, the old output).
+ * The WAV capture and STRIKERS_AUDIO_HASH stay the game's own stream. Tested by tools/audit/test_audio_conceal.py. */
+#define CONCEAL_XFADE 128                                      /* held back and crossfaded, 2.7 ms */
+#define CONCEAL_CORR 256                                       /* frames compared to choose the loop length */
+#define CONCEAL_LMIN 240
+#define CONCEAL_LMAX 960
+#define CONCEAL_HIST 2048                                      /* >= CONCEAL_LMAX + CONCEAL_CORR */
+#define CONCEAL_FULL 1920                                      /* 40 ms of fill at full gain */
+#define CONCEAL_FADE 1920                                      /* then 40 ms down to silence */
+#define CONCEAL_RAMP 480                                       /* 10 ms back up after a fade */
+static int g_wave_seen;                                        /* a waveOut device was opened in this run */
+static int g_conceal = -1;                                     /* starting low-water mark in ms, 0 off; -1 until the first open */
+static unsigned g_low;                                         /* low-water mark now, frames */
+static unsigned long long g_late_fills;                        /* fills that found the device already dry */
+static int16_t g_hist[CONCEAL_HIST * 6];                       /* the game's stream as sent (output layout), newest last */
+static float g_gain = 1.0f;                                    /* gain of the last frame sent */
+static unsigned g_fill_run, g_fill_queued;                     /* fill frames since the game's last buffer; fill headers queued */
+static int g_fill_dead;                                        /* faded to silence: no more fills until the game appends */
+/* Fill credit: the game's audio thread mixes when a buffer comes back, and a buffer comes back when it has played. A fill
+ * queued ahead of the game's next buffers would delay them, so the game would get its buffers later and mix less: more
+ * fills (a spiral, seen in the simulation). Each fill adds its length to g_credit (at most CONCEAL_LMAX frames), and a
+ * game buffer is given back once the play position is within g_credit frames of its end: to the game a fill then costs
+ * no time, as a dry gap did not. The credit decays by 1/32 of the time that passes, so a game that is on time again gets
+ * the old latency back within a second. */
+static float g_credit;
+static LONGLONG g_credit_t;
+static unsigned long long g_fills, g_fill_frames, g_fill_run_longest, g_fill_faded;
 static FILE *g_wav;
 static int g_tone_left, g_heard;
 static unsigned long long g_tone_phase;
@@ -261,7 +306,16 @@ static unsigned add_tone(int16_t *pcm, unsigned frames, unsigned peak) {
     return peak;
 }
 
-/* Moves the buffers that have finished playing to the released list. Returns how many. Caller holds g_lock. */
+static void give_back(Slot *s) {
+    s->given = 1;
+    g_released[g_rel_tail++ % SLOTS] = s->guest;
+    g_total_released++;
+    g_sec_released++;
+}
+
+/* Moves the buffers that have finished playing to the released list, in order. With fill credit (g_credit, see
+ * conceal_fill) a game buffer is given back once the play position is within g_credit frames of its end, while its
+ * header still plays from our copy. Returns how many headers finished or buffers were given back. Caller holds g_lock. */
 static int collect_finished(int everything) {
     int n = 0;
     LONGLONG now = now_ticks();
@@ -272,14 +326,208 @@ static int collect_finished(int everything) {
             else if (!g_started || now < s->due) break;
         }
         if (s->prepared) { waveOutUnprepareHeader(g_wave, &s->hdr, sizeof s->hdr); s->prepared = 0; }
-        g_released[g_rel_tail++ % SLOTS] = s->guest;
         g_head++;
-        g_total_released++;
-        g_sec_released++;
         n++;
+        if (!s->guest) { g_fill_queued--; continue; }   /* a fill: host only */
+        if (!s->given) give_back(s);
     }
-    if (n && !everything && g_head == g_tail && g_started && g_heard && !g_empty_since) { g_underruns++; g_empty_since = now; }
+    if (!everything && g_credit >= 1.0f && g_wave && g_started && g_head != g_tail) {
+        MMTIME mt;
+        memset(&mt, 0, sizeof mt);
+        mt.wType = TIME_SAMPLES;
+        if (waveOutGetPosition(g_wave, &mt, sizeof mt) == MMSYSERR_NOERROR && mt.wType == TIME_SAMPLES) {
+            unsigned long long until = (unsigned long long)mt.u.sample + (unsigned long long)g_credit;
+            for (unsigned i = g_head; i != g_tail; i++) {
+                Slot *s = &g_slots[i % SLOTS];
+                if (!s->guest || s->given) continue;
+                if (s->end_pos > until) break;
+                give_back(s);
+                n++;
+            }
+        }
+    }
     return n;
+}
+
+/* Hands a slot's samples (s->frames) to the device, or schedules it by the clock without one. g_lock held. */
+static void submit_slot(Slot *s) {
+    s->prepared = 0;
+    s->given = 0;
+    if (g_wave) {
+        g_frames_submitted += s->frames;
+        s->end_pos = g_frames_submitted;
+        memset(&s->hdr, 0, sizeof s->hdr);
+        s->hdr.lpData = (LPSTR)s->pcm;
+        s->hdr.dwBufferLength = s->frames * OUT_BPF;
+        if (waveOutPrepareHeader(g_wave, &s->hdr, sizeof s->hdr) == MMSYSERR_NOERROR) {
+            if (waveOutWrite(g_wave, &s->hdr, sizeof s->hdr) == MMSYSERR_NOERROR) s->prepared = 1;
+            else waveOutUnprepareHeader(g_wave, &s->hdr, sizeof s->hdr);
+        }
+    }
+    if (!s->prepared) {                               /* clock-driven: one buffer after the other in real time */
+        LONGLONG now = now_ticks();
+        if (g_clock_due < now) g_clock_due = now;
+        g_clock_due += (LONGLONG)s->frames * g_freq.QuadPart / g_rate;
+        s->due = g_clock_due;
+    }
+    g_tail++;
+}
+
+static int slot_room(Slot *s, unsigned frames) {
+    size_t need = (size_t)frames * OUT_BPF;
+    if (need > s->capacity || !s->pcm) {
+        free(s->pcm);
+        s->capacity = need < 4096 ? 4096 : need;
+        s->pcm = malloc(s->capacity);
+    }
+    return s->pcm != NULL;
+}
+
+/* ---- gap concealment (see g_conceal) */
+static float raised_cos(unsigned i, unsigned n) { return 0.5f - 0.5f * cosf(3.14159265f * ((float)i + 0.5f) / (float)n); }
+
+/* The game's buffer (n frames in s->pcm) goes into the history; s->pcm becomes what is sent: the held-back tail of the
+ * previous buffer and this one's first n - CONCEAL_XFADE frames, ramped back up after a faded fill. */
+static void conceal_push(Slot *s, unsigned n) {
+    unsigned ch = (unsigned)g_out_ch, keep = CONCEAL_HIST;
+    int16_t *pcm = s->pcm;
+    if (n >= keep) memcpy(g_hist, pcm + (size_t)(n - keep) * ch, (size_t)keep * ch * 2);
+    else {
+        memmove(g_hist, g_hist + (size_t)n * ch, (size_t)(keep - n) * ch * 2);
+        memcpy(g_hist + (size_t)(keep - n) * ch, pcm, (size_t)n * ch * 2);
+    }
+    if (n <= keep - CONCEAL_XFADE) memcpy(pcm, g_hist + (size_t)(keep - CONCEAL_XFADE - n) * ch, (size_t)n * ch * 2);
+    else {                                            /* longer than the history (never with 512-frame buffers) */
+        memmove(pcm + (size_t)CONCEAL_XFADE * ch, pcm, (size_t)(n - CONCEAL_XFADE) * ch * 2);
+        memcpy(pcm, g_hist + (size_t)(keep - CONCEAL_XFADE) * ch, (size_t)CONCEAL_XFADE * ch * 2);   /* stale only if n > keep */
+    }
+    for (unsigned i = 0; i < n && g_gain < 1.0f; i++) {
+        g_gain += 1.0f / CONCEAL_RAMP;
+        if (g_gain > 1.0f) g_gain = 1.0f;
+        for (unsigned k = 0; k < ch; k++) pcm[(size_t)i * ch + k] = (int16_t)(pcm[(size_t)i * ch + k] * g_gain);
+    }
+    if (g_fill_run > g_fill_run_longest) g_fill_run_longest = g_fill_run;
+    g_fill_run = 0;
+    g_fill_dead = 0;
+}
+
+/* The loop length: the L whose preceding CONCEAL_CORR frames look most like the newest CONCEAL_CORR (normalized
+ * correlation of the channel sum, every second lag and sample, then refined by one), so that playing h[E-L..] after h[E]
+ * continues the waveform in phase. */
+static unsigned conceal_length(void) {
+    enum { SPAN = CONCEAL_LMAX + CONCEAL_CORR };
+    static float m[SPAN];
+    unsigned ch = (unsigned)g_out_ch;
+    const int16_t *h = g_hist + (size_t)(CONCEAL_HIST - SPAN) * ch;
+    for (unsigned i = 0; i < SPAN; i++) { float v = 0; for (unsigned k = 0; k < ch; k++) v += h[(size_t)i * ch + k]; m[i] = v; }
+    const float *ref = m + SPAN - CONCEAL_CORR;
+    unsigned best = 512;
+    float best_score = -1e30f;
+    for (int pass = 0; pass < 2; pass++) {
+        unsigned lo = pass ? (best > CONCEAL_LMIN ? best - 1 : best) : CONCEAL_LMIN;
+        unsigned hi = pass ? (best < CONCEAL_LMAX ? best + 1 : best) : CONCEAL_LMAX;
+        unsigned step = pass ? 1 : 2, sstep = pass ? 1 : 2;
+        for (unsigned L = lo; L <= hi; L += step) {
+            const float *cand = ref - L;
+            float dot = 0, energy = 1.0f;
+            for (unsigned i = 0; i < CONCEAL_CORR; i += sstep) { dot += ref[i] * cand[i]; energy += cand[i] * cand[i]; }
+            float score = dot / sqrtf(energy);
+            if (score > best_score) { best_score = score; best = L; }
+        }
+    }
+    return best;
+}
+
+static void conceal_reset(void) {                     /* g_lock held, nothing of ours queued */
+    memset(g_hist, 0, sizeof g_hist);
+    g_gain = 1.0f;
+    g_fill_run = g_fill_queued = 0;
+    g_fill_dead = 0;
+    g_credit = 0;
+}
+
+static int conceal_possible(void) {
+    return g_conceal > 0 && g_wave && g_open && g_started && g_heard && !g_fill_dead && g_tail - g_head < SLOTS;
+}
+
+/* Queues one fill: L frames that continue from the held-back tail and end where it begins. g_lock held. */
+static void conceal_fill(void) {
+    Slot *s = &g_slots[g_tail % SLOTS];
+    unsigned L = conceal_length(), ch = (unsigned)g_out_ch;
+    if (!slot_room(s, L)) return;
+    const int16_t *tail = g_hist + (size_t)(CONCEAL_HIST - CONCEAL_XFADE) * ch;
+    const int16_t *loop = g_hist + (size_t)(CONCEAL_HIST - CONCEAL_XFADE - L) * ch;   /* ends where the tail begins */
+    int16_t *out = s->pcm;
+    for (unsigned i = 0; i < L; i++) {
+        float a = i < CONCEAL_XFADE ? raised_cos(i, CONCEAL_XFADE) : 1.0f;
+        if (g_fill_run + i >= CONCEAL_FULL) { g_gain -= 1.0f / CONCEAL_FADE; if (g_gain < 0) g_gain = 0; }
+        for (unsigned k = 0; k < ch; k++) {
+            float v = loop[(size_t)i * ch + k] * a + (a < 1.0f ? tail[(size_t)i * ch + k] * (1.0f - a) : 0.0f);
+            out[(size_t)i * ch + k] = sat16((int)(v * g_gain));
+        }
+    }
+    s->guest = 0;
+    s->frames = L;
+    g_fill_run += L;
+    g_fills++;
+    g_fill_frames += L;
+    g_fill_queued++;
+    if (g_gain <= 0) { g_fill_dead = 1; g_fill_faded++; }
+    g_credit += (float)L;
+    if (g_credit > CONCEAL_LMAX) g_credit = CONCEAL_LMAX;
+    submit_slot(s);
+}
+
+/* The device played silence although we were filling: the low-water mark was too low for it. +4 ms, up to 40 ms. */
+static void conceal_late(void) {
+    g_late_fills++;
+    if (g_low < (unsigned)g_rate / 25) g_low += (unsigned)g_rate / 250;
+}
+
+/* Audio thread: a fill when the device is about to run dry (its play position within g_low frames of the end of what it
+ * has, or no header left). Two signs that a fill came too late: it finds the device with nothing left, or the play
+ * position fell more than 4 ms behind the clock at once (the engine played part of a period as silence before the fill
+ * reached it; the reference follows slow clock drift of up to 0.1%). g_lock held. */
+static int g_lag_valid;
+static LONGLONG g_lag_t0, g_lag_prev;
+static unsigned long long g_lag_pos0;
+static double g_lag_ref;
+static void conceal_check(void) {
+    if (!conceal_possible()) { g_lag_valid = 0; return; }
+    LONGLONG now = now_ticks();
+    MMTIME mt;
+    memset(&mt, 0, sizeof mt);
+    mt.wType = TIME_SAMPLES;
+    int have = waveOutGetPosition(g_wave, &mt, sizeof mt) == MMSYSERR_NOERROR && mt.wType == TIME_SAMPLES;
+    unsigned long long pos = have ? (unsigned long long)mt.u.sample : 0;
+    int dry = g_head == g_tail || (have && pos >= g_frames_submitted);
+    if (have && !dry) {
+        if (!g_lag_valid || pos < g_lag_pos0) { g_lag_valid = 1; g_lag_t0 = now; g_lag_pos0 = pos; g_lag_ref = 0; }
+        else {
+            double f = (double)g_rate / (double)g_freq.QuadPart;
+            double lag = (double)(now - g_lag_t0) * f - (double)(pos - g_lag_pos0);
+            double drift = g_lag_ref + (double)(now - g_lag_prev) * f / 1000.0;
+            g_lag_ref = lag < drift ? lag : drift;
+            if (lag - g_lag_ref > g_rate / 250.0) { conceal_late(); g_lag_ref = lag; }
+        }
+        g_lag_prev = now;
+    } else g_lag_valid = 0;
+    if (dry) conceal_late();
+    else if (!have || g_frames_submitted - pos >= g_low) return;
+    conceal_fill();
+}
+
+/* After headers finished: if the device has nothing left, fill (audio thread) or wake the audio thread to do it (the
+ * game's thread), else count an underrun (device ran dry while started, after the first sound). g_lock held. */
+static void queue_empty_check(int may_fill) {
+    if (g_head != g_tail || !g_open || !g_started || !g_heard || g_empty_since) return;
+    if (conceal_possible()) {
+        if (may_fill) conceal_fill();
+        else SetEvent(g_wake);
+        return;
+    }
+    g_underruns++;
+    g_empty_since = now_ticks();
 }
 
 /* ---- producer and stall diagnostics (audit 03) */
@@ -519,6 +767,22 @@ static void stall_start(void) {
     printf("nn::audio: STRIKERS_AUDIO_STALL=%d: appends more than %d ms apart are explained in the log\n", g_stall_ms, g_stall_ms);
 }
 
+/* One wake of the audio thread (waveOut's done event, or every 2 ms): finished headers, then a fill if the device has
+ * nothing left. g_lock held. Returns the number of headers that finished. */
+static int audio_service(void) {
+    if (!g_open) return 0;
+    LONGLONG now = now_ticks();
+    if (g_credit > 0) {
+        g_credit -= (float)((double)(now - g_credit_t) * g_rate / (double)g_freq.QuadPart / 32.0);
+        if (g_credit < 0) g_credit = 0;
+    }
+    g_credit_t = now;
+    int n = collect_finished(0);
+    conceal_check();
+    queue_empty_check(1);
+    return n;
+}
+
 static DWORD WINAPI audio_thread(LPVOID arg) {
     (void)arg;
     LONGLONG next_report = now_ticks() + g_freq.QuadPart;
@@ -528,7 +792,7 @@ static DWORD WINAPI audio_thread(LPVOID arg) {
     for (;;) {
         WaitForSingleObject(g_wake, 2);
         EnterCriticalSection(&g_lock);
-        int n = g_open ? collect_finished(0) : 0;
+        int n = audio_service();
         uint64_t ev = g_event;
         LONGLONG now = now_ticks();
         int report = 0;
@@ -571,6 +835,14 @@ static void audio_OpenDefaultAudioOut(Ctx *c) {       /* (AudioOut *, nn::os::Sy
     g_channels = want_channels == 6 && surround_on() ? 6 : 2;
     g_out_ch = g_channels == 6 ? 6 : 2;
     g_head = g_tail = g_rel_head = g_rel_tail = 0;
+    if (g_conceal < 0) {
+        const char *ce = getenv("STRIKERS_AUDIO_CONCEAL");
+        g_conceal = ce && *ce ? atoi(ce) : 12;
+        if (g_conceal < 0) g_conceal = 0;
+        if (g_conceal > 100) g_conceal = 100;
+    }
+    if (!g_low || (unsigned)g_rate * (unsigned)g_conceal / 1000u > g_low) g_low = (unsigned)g_rate * (unsigned)g_conceal / 1000u;
+    conceal_reset();
     g_frames_submitted = 0;
     g_started = 0;
     g_clock_due = 0;
@@ -592,6 +864,7 @@ static void audio_OpenDefaultAudioOut(Ctx *c) {       /* (AudioOut *, nn::os::Sy
             x.Samples.wValidBitsPerSample = 16; x.dwChannelMask = KSAUDIO_SPEAKER_5POINT1; x.SubFormat = au_SUBTYPE_PCM;
         }
         MMRESULT r = waveOutOpen(&g_wave, WAVE_MAPPER, g_out_ch == 6 ? &x.Format : &f, (DWORD_PTR)g_wake, 0, CALLBACK_EVENT);
+        if (r == MMSYSERR_NOERROR) g_wave_seen = 1;
         if (r != MMSYSERR_NOERROR) { g_wave = NULL; printf("nn::audio: waveOutOpen failed (%u): no sound, buffers are released by the clock\n", (unsigned)r); }
         else {
             waveOutPause(g_wave);                     /* nothing plays before StartAudioOut */
@@ -705,42 +978,27 @@ static void audio_AppendAudioOutBuffer(Ctx *c) {      /* (AudioOut *, AudioOutBu
             }
             g_last_append = now;
         }
-        if (g_wave) {
-            if (g_started && g_heard && g_frames_submitted) {
-                MMTIME mt;
-                memset(&mt, 0, sizeof mt);
-                mt.wType = TIME_SAMPLES;
-                if (waveOutGetPosition(g_wave, &mt, sizeof mt) == MMSYSERR_NOERROR && mt.wType == TIME_SAMPLES) {
-                    unsigned long long pos = (unsigned long long)mt.u.sample;
-                    if (pos >= g_frames_submitted) g_starved++;
-                    else {
-                        unsigned long long ms = (g_frames_submitted + frames - pos) * 1000ULL / (unsigned)g_rate;
-                        g_lat_hist[ms < 511 ? ms : 511]++; g_lat_n++;
-                    }
+        if (g_wave && g_started && g_heard && g_frames_submitted) {
+            MMTIME mt;
+            memset(&mt, 0, sizeof mt);
+            mt.wType = TIME_SAMPLES;
+            if (waveOutGetPosition(g_wave, &mt, sizeof mt) == MMSYSERR_NOERROR && mt.wType == TIME_SAMPLES) {
+                unsigned long long pos = (unsigned long long)mt.u.sample;
+                if (pos >= g_frames_submitted) g_starved++;
+                else {
+                    unsigned long long ms = (g_frames_submitted + frames - pos) * 1000ULL / (unsigned)g_rate;
+                    g_lat_hist[ms < 511 ? ms : 511]++; g_lat_n++;
                 }
             }
-            g_frames_submitted += frames;
-            memset(&s->hdr, 0, sizeof s->hdr);
-            s->hdr.lpData = (LPSTR)s->pcm;
-            s->hdr.dwBufferLength = frames * OUT_BPF;
-            if (waveOutPrepareHeader(g_wave, &s->hdr, sizeof s->hdr) == MMSYSERR_NOERROR) {
-                if (waveOutWrite(g_wave, &s->hdr, sizeof s->hdr) == MMSYSERR_NOERROR) s->prepared = 1;
-                else waveOutUnprepareHeader(g_wave, &s->hdr, sizeof s->hdr);
-            }
         }
-        if (!s->prepared) {                           /* clock-driven: one buffer after the other in real time */
-            LONGLONG now = now_ticks();
-            if (g_clock_due < now) g_clock_due = now;
-            g_clock_due += (LONGLONG)frames * g_freq.QuadPart / g_rate;
-            s->due = g_clock_due;
-        }
-        g_tail++;
+        if (g_wave && g_conceal > 0) conceal_push(s, frames);
+        submit_slot(s);
         if (g_empty_since) {
             unsigned long long gap = (unsigned long long)(now_ticks() - g_empty_since);
             g_underrun_ticks += gap; if (gap > g_underrun_longest) g_underrun_longest = gap;
             g_empty_since = 0;
         }
-        if (g_tail - g_head > g_queue_max) g_queue_max = g_tail - g_head;
+        if (g_tail - g_head - g_fill_queued > g_queue_max) g_queue_max = g_tail - g_head - g_fill_queued;
         g_total_appended++;
         g_sec_appended++;
         if (peak > g_sec_peak) g_sec_peak = peak;
@@ -764,6 +1022,11 @@ void audio_report(FILE *out) {
                  "underruns (device ran dry while started, after the first sound): %llu, %.1f ms in all, longest %.1f ms; %llu s with sound\n",
             g_rate, g_channels, g_total_appended, g_total_released, g_total_dropped, g_queue_max,
             g_underruns, (double)g_underrun_ticks * 1000.0 / f, (double)g_underrun_longest * 1000.0 / f, g_nonsilent_seconds);
+    if (g_conceal > 0 && g_wave_seen)
+        fprintf(out, "nn::audio: gaps filled (the game was late; recent sound repeated, crossfaded; low-water mark %d ms, now %.0f ms after %llu late fills): "
+                     "%llu fills, %.1f ms in all, longest run %.1f ms, %llu faded to silence\n",
+                g_conceal, g_low * 1000.0 / g_rate, g_late_fills, g_fills, (double)g_fill_frames * 1000.0 / g_rate, (double)(g_fill_run > g_fill_run_longest ? g_fill_run : g_fill_run_longest) * 1000.0 / g_rate, g_fill_faded);
+    else fprintf(out, "nn::audio: gaps filled: off (%s)\n", g_conceal > 0 ? "no output device" : "STRIKERS_AUDIO_CONCEAL=0");
     fprintf(out, "nn::audio: appends that found the device's own play position at the end of everything submitted (the output had no samples left): %llu of %llu\n", g_starved, g_total_appended);
     if (g_lat_n) {                                              /* percentiles of the 1 ms latency bins */
         const double q[3] = {0.01, 0.5, 0.99};
@@ -800,7 +1063,7 @@ static void audio_StartAudioOut(Ctx *c) {             /* (AudioOut *) -> Result 
 static void audio_GetReleasedAudioOutBuffer(Ctx *c) { /* (AudioOut *) -> AudioOutBuffer * or null */
     uint64_t r = 0;
     EnterCriticalSection(&g_lock);
-    if (g_open) collect_finished(0);
+    if (g_open && collect_finished(0)) queue_empty_check(0);
     if (g_rel_head != g_rel_tail) r = g_released[g_rel_head++ % SLOTS];
     g_sec_polls++;
     if (!r) g_sec_empty++;
@@ -816,6 +1079,7 @@ static void audio_StopAudioOut(Ctx *c) {              /* (AudioOut *): everythin
     g_frames_submitted = 0;                           /* waveOutReset also sets the device position back to 0 */
     EnterCriticalSection(&g_lock);
     if (g_open) collect_finished(1);
+    conceal_reset();
     g_started = 0;
     if (g_wave) waveOutPause(g_wave);
     uint64_t ev = g_event;

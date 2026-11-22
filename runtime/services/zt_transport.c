@@ -72,18 +72,24 @@ static int fd=-1, family;
 static struct {struct zts_sockaddr_storage addr;uint64_t used;} endpoints[128];
 static unsigned endpoint_count;
 
-void zt_config(char *mode,unsigned mc,char *network,unsigned nc) {
-    char path[MAX_PATH],exe[MAX_PATH];
+static void ini_path(char *path,unsigned cap) {
+    char exe[MAX_PATH];
     const char *p=getenv("STRIKERS_PC_CONFIG");
     if(!p||!*p)p=getenv("STRIKERS_GRAPHICS_CONFIG");
-    if(p&&*p)snprintf(path,sizeof path,"%s",p);
+    if(p&&*p)snprintf(path,cap,"%s",p);
     else if((p=getenv("STRIKERS_CONFIG"))&&*p) {
-        snprintf(path,sizeof path,"%s",p);char *a=strrchr(path,'/'),*b=strrchr(path,'\\');if(b&&(!a||b>a))a=b;
-        if(a)snprintf(a+1,sizeof path-(size_t)(a+1-path),"strikers.ini");else snprintf(path,sizeof path,"strikers.ini");
-    } else if((p=getenv("STRIKERS_USERDATA"))&&*p)snprintf(path,sizeof path,"%s/strikers.ini",p);
-    else {GetModuleFileNameA(NULL,exe,sizeof exe);char *s=strrchr(exe,'\\');if(s)*s=0;snprintf(path,sizeof path,"%s/../config/strikers.ini",exe);}
-    char absolute[MAX_PATH];if(_fullpath(absolute,path,sizeof absolute))snprintf(path,sizeof path,"%s",absolute);
-    p=getenv("STRIKERS_NETWORK");if(p)snprintf(mode,mc,"%s",p);else GetPrivateProfileStringA("Network","mode","lan",mode,mc,path);
+        snprintf(path,cap,"%s",p);char *a=strrchr(path,'/'),*b=strrchr(path,'\\');if(b&&(!a||b>a))a=b;
+        if(a)snprintf(a+1,cap-(size_t)(a+1-path),"strikers.ini");else snprintf(path,cap,"strikers.ini");
+    } else if((p=getenv("STRIKERS_USERDATA"))&&*p)snprintf(path,cap,"%s/strikers.ini",p);
+    else {GetModuleFileNameA(NULL,exe,sizeof exe);char *s=strrchr(exe,'\\');if(s)*s=0;snprintf(path,cap,"%s/../config/strikers.ini",exe);}
+    char absolute[MAX_PATH];if(_fullpath(absolute,path,sizeof absolute))snprintf(path,cap,"%s",absolute);
+}
+void zt_ini_string(const char *key,const char *def,char *out,unsigned cap) {
+    char path[MAX_PATH];ini_path(path,sizeof path);GetPrivateProfileStringA("Network",key,def,out,cap,path);
+}
+void zt_config(char *mode,unsigned mc,char *network,unsigned nc) {
+    char path[MAX_PATH];ini_path(path,sizeof path);const char *p;
+    p=getenv("STRIKERS_NETWORK");if(p)snprintf(mode,mc,"%s",p);else GetPrivateProfileStringA("Network","mode","internet",mode,mc,path);
     p=getenv("STRIKERS_ZEROTIER_NETWORK");if(p)snprintf(network,nc,"%s",p);else GetPrivateProfileStringA("Network","zerotier_network","",network,nc,path);
 }
 static INIT_ONCE config_once=INIT_ONCE_STATIC_INIT;
@@ -113,19 +119,21 @@ int zt_set_group_network(const char *n) {
     if(p_zts_strikers_group_peers)p_zts_strikers_group_peers(group_enabled,v,group_peers,group_count);
     ReleaseSRWLockExclusive(&zlock);return 1;
 }
-static int lan_mode;
+static int lan_mode,relay_mode;
 static BOOL CALLBACK read_mode(PINIT_ONCE o,PVOID a,PVOID *c) {
     (void)o;(void)a;(void)c;char m[64],n[64];zt_config(m,sizeof m,n,sizeof n);
     if(!_stricmp(m,"zerotier")) {
         /* A group needs its network ID or a group service. With neither, it could never connect: Local Wireless
-         * uses the same network (LAN) instead. 0.1.0 shipped mode = zerotier with both empty. */
+         * uses the same network and internet rooms instead. 0.1.0 shipped mode = zerotier with both empty. */
         if(n[0]||service_configured())requested=1;
-        else {lan_mode=1;printf("[network] no group network or group service in strikers.ini; Local Wireless uses the same network (LAN)\n");}
+        else {lan_mode=relay_mode=1;printf("[network] no group network or group service in strikers.ini; Local Wireless uses the same network and internet rooms\n");}
     } else if(!_stricmp(m,"lan"))lan_mode=1;
+    else if(!_stricmp(m,"internet"))lan_mode=relay_mode=1;
     return TRUE;
 }
 int zt_requested(void) {InitOnceExecuteOnce(&config_once,read_mode,NULL,NULL);return requested;}
 int zt_lan_mode(void) {InitOnceExecuteOnce(&config_once,read_mode,NULL,NULL);return lan_mode;}
+int zt_relay_mode(void) {InitOnceExecuteOnce(&config_once,read_mode,NULL,NULL);return relay_mode;}
 static void set_state(int state,const char *msg) {
     AcquireSRWLockExclusive(&zlock);
     if(status.state!=state||strcmp(status.message,msg))printf("[zerotier] state=%d %s\n",state,msg);

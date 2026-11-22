@@ -158,7 +158,7 @@ def build_host(force, opt, env, asan=False):
 def network_fingerprint():
     names = ('ldn_lan.h', 'nnldn.c', 'nnldn_lan.inc', 'nnsocket.c', 'nnsocket_lan.inc',
              'network_policy.c', 'network_policy.h', 'zt_transport.c', 'zt_transport.h', 'zt_group_filter.h',
-             'group_client.c', 'group_client.h', 'net_sim.c', 'net_sim.h')
+             'group_client.c', 'group_client.h', 'net_sim.c', 'net_sim.h', 'relay_transport.c', 'relay_transport.h')
     data = b'Strikers LAN SDK13.3 game2e90f0815b1f92a1\n'
     for name in names:
         with open(rel('runtime/services/' + name), 'rb') as f:

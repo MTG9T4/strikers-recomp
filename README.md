@@ -15,9 +15,15 @@ C ahead of time, and a host runtime replaces the console's system services, NVN 
 - **Mods:** mods and Atmosphere cheats.
 - **Controls:** Xbox, PlayStation, Switch and GameCube controllers, with Xbox and PlayStation button pictures; rebindable
   keyboard; mouse clicks in menus.
-- **Local Wireless:** with PCs on the same network, with nothing to set up; or over the internet through a private group
-  network.
+- **Local Wireless, also over the internet:** rooms from PCs on the same network and from the internet show up in one
+  list, with nothing to set up. A shared room key keeps a group of friends to themselves. Internet rooms go through
+  the project's relay ([server/relay](server/relay/README.md)), which sees players' IP addresses and keeps no record
+  of them. **Coming soon:** the relay is not online yet. Until it is, same-network rooms work and internet rooms switch
+  on by themselves once it starts, with nothing to download.
 - **More:** fast-forward (hold Tab), saves imported from emulators, 5.1 surround sound.
+- **Problem reports, only when you choose:** F1 > Report sends your logs to the developer, and after a crash the
+  launcher asks first. User and PC names are taken out of the logs, and reports are deleted after 90 days
+  ([cloudflare/reports](cloudflare/reports/README.md)).
 - Runs at 60 fps like the Switch version (a 30 fps cap is available); the game's own clock stays at 60 Hz.
 
 ## Screenshots

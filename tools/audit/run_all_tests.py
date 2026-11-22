@@ -54,7 +54,7 @@ def tests(a, prefix):
     t = []
     def add(name, cmd, timeout=900, must=None, needs=()):
         t.append((name, None if any(n is None for n in needs) else cmd, timeout, must))
-    for name in ('test_input_script', 'test_movie_queue', 'test_media_contracts', 'test_runtime_contracts',
+    for name in ('test_input_script', 'test_movie_queue', 'test_media_contracts', 'test_audio_conceal', 'test_runtime_contracts',
                  'test_sdk_interposition', 'test_gfx_contracts', 'test_spv_files'):
         add(name, PY + [str(AUDIT / (name + '.py'))])
     add('test_nex', PY + [str(AUDIT / 'test_nex.py'), '--out', str(ROOT / f'build/run/{prefix}-nex')], timeout=120)

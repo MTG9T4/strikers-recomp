@@ -3,7 +3,8 @@
 ## Install
 
 You need 64-bit Windows 10 version 1903 or later, or Windows 11, a graphics driver that
-supports Vulkan, and at least 20 GB of free space. Each player must have their
+supports Vulkan, and at least 20 GB of free space. The game's videos need Windows'
+free **VP9 Video Extensions** (Microsoft Store; most PCs already have them). Each player must have their
 own copy of the game and files copied from their own Switch:
 
 - **The ExeFS folder** of the game's update **v393216** (shown in the game as
@@ -136,27 +137,44 @@ the folder you extracted the release ZIP to.
 - **Sound:** Audio / controls > **Speakers** chooses stereo or 5.1 surround;
   automatic follows Windows' speaker setup.
 
-## Play on the same network
+## Play together
 
-Local Wireless plays with PCs on the same home network (Wi-Fi or cable), with
-no accounts and nothing to set up. This is the default (`mode = lan` under
-`[Network]` in `strikers.ini`).
+Local Wireless plays with PCs on the same home network and with players over
+the internet. There are no accounts, codes or ports to set up.
 
 1. Everyone uses the same release version.
 2. One player opens **Quick Battle → Local Wireless** and creates a room.
-3. The others open Local Wireless on their PCs and choose that room.
+3. The others open Local Wireless on their PCs and choose that room. Rooms on
+   your own network and rooms on the internet show up in the same list.
+
+**Play only with your friends:** everyone presses **F1**, opens **Online**,
+types the same **room key** (any word you agree on) and chooses **Use this
+key**. Then search for rooms again. With a room key you see only the rooms of
+players who typed the same key. Leave it empty to see everyone's rooms.
+
+**Internet rooms are coming soon.** The relay server is not online yet. Until it
+is, rooms on your own network work and F1 → Online says **Not reachable** for
+internet rooms. They switch on by themselves once the relay starts: nothing to
+download or change.
+
+**F1 → Online** also shows whether internet rooms are connected, and your ping.
+Internet rooms go through the project's relay server. It sees your IP address
+and the room's game traffic, and keeps no record of IP addresses. To play only
+with PCs on your own network, untick **Internet rooms** there and restart
+(`mode = lan` under `[Network]` in `strikers.ini`).
 
 The first time, Windows may ask whether to allow the game on networks: allow it
-on **private** networks. If you said no, open **Windows Security → Firewall &
-network protection → Allow an app through firewall** and tick **Private** for
-`strikers_native.exe`. Guest or public Wi-Fi often keeps PCs apart; a home
-network does not.
+on **private** networks. This is for rooms on your own network; internet rooms
+work either way. If you said no, open **Windows Security → Firewall & network
+protection → Allow an app through firewall** and tick **Private** for
+`strikers_native.exe`. Guest or public Wi-Fi often keeps PCs on it apart; play
+over the internet rooms there instead.
 
-## Play over the internet with a group
+## Advanced: a private group over ZeroTier
 
-Friends in different places play Local Wireless over a private group network
-instead. This needs an organizer who runs the group service; if you only play
-with PCs on the same network, skip this section.
+Most players don't need this: internet rooms already play over the internet.
+A group is for organizers who want their own invitation-only network. It needs
+an organizer who runs the group service.
 
 Your organizer supplies a `strikers.ini` with `mode = zerotier`, the group service address and
 private invitation code filled in. Keep that code within your group. Nobody
@@ -180,9 +198,9 @@ An existing enrollment has its own saved credential. Replacing the invitation
 code does not repair a removed enrollment or lost identity; ask the organizer
 for help. Do not delete or share identity files to try to repair it.
 
-## Host or join a room
+## Rooms in a group
 
-One friend chooses **Create room** in Local Wireless. That person is the host;
+In a group, one friend chooses **Create room** in Local Wireless. That person is the host;
 any group member can host. The other friends choose the host's room and join.
 Everyone should use the same release version and finish joining the group
 before looking for rooms. Friends shown in F1 are group members; that list does
@@ -195,6 +213,14 @@ account sign-in are not part of this setup.
 
 ## When something fails
 
+**Send a report to the developer:** press **F1**, open **Report**, say what
+happened and press **Send report**. The report holds the game's logs, your
+processor, graphics card, Windows version and memory, your settings (invite
+code and room key removed) and, if you leave it ticked, a screenshot. Your
+Windows user name and PC name are taken out of file paths. You get a report ID
+to mention if you also post about the problem. Nothing is sent unless you press
+Send. **F9** saves the same report in `userdata\reports` without sending it.
+
 - **Setup stops:** read its one-sentence message. Keep
   `installer\setup.log` and send it to your organizer if you choose. Damaged
   game files need a fresh copy from your own Switch. Restore a damaged
@@ -206,18 +232,30 @@ account sign-in are not part of this setup.
   same originals. Setup validates them again and resumes completed steps;
   incomplete compiler outputs are rebuilt. Keep the originals outside the
   installer's `build`, `installer`, `toolchain` and `userdata` folders.
+- **Videos are black, or the loading screen after a match never ends:** install
+  the free **VP9 Video Extensions** and **Web Media Extensions** from the
+  Microsoft Store, then start the game again. The game plays its videos with
+  them; without them a video never starts and the game waits for it.
 - **The game will not launch:** make sure the ZIP was completely extracted and
   setup finished. Send `userdata\last-game.log` to the organizer. A graphics
   driver without Vulkan support cannot run this renderer.
-- **The game crashes:** the launcher saves a local report in
-  `userdata\crashes`. Send the latest `.dmp` and matching `.txt` if the organizer
-  asks. They are never uploaded automatically. A report can contain parts of
-  the running process, so share it privately.
+- **The game crashes:** the launcher saves a crash report in
+  `userdata\crashes` and asks whether to send it to the developer. **Yes**
+  sends the game's log, the crash report and a memory snapshot of the game when
+  it crashed, with your user name and PC name taken out of file paths. **No**
+  sends nothing. A memory snapshot can contain parts of the running game, so
+  share the files in `userdata\crashes` only privately.
 - **No room appears on the same network:** check that everyone uses the same
   release, that the PCs are on the same network (not guest Wi-Fi), that one
   player actually created a Local Wireless room, and that the game is allowed
   on private networks in Windows Firewall. `userdata\last-game.log` names the
   network adapter the game used, in a line starting with `[lan]`.
+- **No internet room appears:** open **F1 → Online**. It should say
+  **Connected**. Check that everyone uses the same release and the same room
+  key (or that everyone left it empty), that one player created a room, and
+  then search again. **Not reachable** means the game cannot reach the relay
+  server. Check that the PC is online; some school, office and hotel networks
+  block games. Rooms on your own network still work.
 - **No room appears in a group:** check that everyone sees Connected, uses the same
   release and group, and that one friend actually created a Local Wireless
   room. Ask for a new invitation if yours expired. Do not change router,

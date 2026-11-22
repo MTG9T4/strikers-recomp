@@ -1,4 +1,5 @@
 """Developer-only build of setup and local crash-monitor applications."""
+import os
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parent))
@@ -26,11 +27,11 @@ def main():
     if not rc:raise ValueError('rc.exe (Windows SDK) not found')
     run([rc,'/nologo','/fo',out/'app_icon.res',out/'app_icon.rc'],env,out,out/'icon-build.log')
     run([cl,'/nologo','/utf-8','/std:c++17','/EHsc','/O2','/MT','/DUNICODE','/D_UNICODE',
-         ROOT/'tools/release/crash_launcher.cpp','/Fo'+str(out/'launcher.obj'),
+         ROOT/'tools/release/crash_launcher.cpp',ROOT/'runtime/core/report_send.c','/Fo'+str(out)+os.sep,
          '/Fe'+str(out/'StrikersRecomp.exe'),'/link',out/'app_icon.res','/SUBSYSTEM:WINDOWS','/ENTRY:wmainCRTStartup',
          '/DEPENDENTLOADFLAG:0x800',
          '/MANIFEST:EMBED',"/MANIFESTUAC:level='asInvoker' uiAccess='false'",
-         'dbghelp.lib','user32.lib','gdi32.lib','gdiplus.lib','ole32.lib','uuid.lib'],env,out,out/'launcher-build.log')
+         'dbghelp.lib','user32.lib','gdi32.lib','gdiplus.lib','ole32.lib','uuid.lib','winhttp.lib','advapi32.lib'],env,out,out/'launcher-build.log')
     run([cl,'/nologo','/utf-8','/std:c++17','/EHsc','/O2','/MT','/DUNICODE','/D_UNICODE',
          ROOT/'installer/setup_win32.cpp','/Fo'+str(out/'setup.obj'),'/Fe'+str(out/'StrikersSetup.exe'),
          '/link',out/'app_icon.res','/SUBSYSTEM:WINDOWS','/MANIFEST:EMBED',
@@ -54,6 +55,7 @@ def main():
         proof[name]=dict(sha256=sha256(path),imports=imports,clr=clr,static_crt=True)
     proof['source_sha256']={str(p.relative_to(ROOT)):sha256(p) for p in
         (ROOT/'installer/setup_win32.cpp',ROOT/'tools/release/crash_launcher.cpp',ROOT/'tools/release/gui_self_test.h',
+         ROOT/'runtime/core/report_send.c',ROOT/'runtime/core/report_send.h',
          ROOT/'tools/release/app_icon.py')}
     proof['icon_sha256']=sha256(out/'app_icon.ico')
     (out/'app-proof.json').write_text(json.dumps(proof,indent=2))

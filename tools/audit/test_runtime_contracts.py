@@ -200,7 +200,7 @@ __declspec(dllexport) int offline_tests(void) {
     c.x[0]=(uint64_t)(uintptr_t)&ctx;CALL("nnsslContextDestroy"); REQUIRE(c.x[0]==0 && !ctx);
     REQUIRE(traps==0); return 0;
 }
-''', sources=['runtime/services/' + p for p in ('zt_transport.c', 'net_sim.c', 'network_policy.c', 'nnaccount.c', 'nnfriends.c',
+''', sources=['runtime/services/' + p for p in ('zt_transport.c', 'relay_transport.c', 'net_sim.c', 'network_policy.c', 'nnaccount.c', 'nnfriends.c',
                      'nnldn.c', 'nnnifm.c', 'nnsocket.c', 'nnssl.c')], libs=['ws2_32.lib'])
         assert offline.offline_tests() == 0, 'offline service contract failure (C source line returned)'
         result['offline_services'] = 'passed: local UID, unavailable login/token/network, no sockets, LDN disabled, SSL no-socket failure'

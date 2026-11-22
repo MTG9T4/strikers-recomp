@@ -124,6 +124,7 @@ def main():
 #include "nnsocket.c"
 #include "network_policy.c"
 #include "zt_transport.c"
+#include "relay_transport.c"
 #include "net_sim.c"
 /* Group HTTP/overlay is tested separately; this harness owns only LDN sockets. */
 void group_ldn_state(int state) {(void)state;}

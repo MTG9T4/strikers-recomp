@@ -8,6 +8,7 @@ typedef struct {
     char path[260];
     char network_mode[32], zerotier_network[32];
     char group_service[256], group_code[16];
+    char room_key[64], relay[128];   /* internet rooms: [Network] room_key (empty = public) and relay (empty = the project's) */
     int upscale; /* 0 linear, 1 AMD FSR1, 2 nearest, 3 integer nearest */
     float sharpness; /* 0..1 (1 strongest) */
     int monitor, pos_x, pos_y, position_valid, frame_cap, volume, pad_layout, mouse_menu;

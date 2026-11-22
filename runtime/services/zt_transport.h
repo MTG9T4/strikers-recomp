@@ -20,7 +20,11 @@ int zt_requested(void);
 /* Same-network Local Wireless: [Network] mode = lan (or STRIKERS_NETWORK=lan), or mode = zerotier with no group
  * network and no group service set. */
 int zt_lan_mode(void);
+/* Internet rooms beside the same network: [Network] mode = internet (the default; see relay_transport.h). */
+int zt_relay_mode(void);
 void zt_config(char *mode, unsigned mode_cap, char *network, unsigned network_cap);
+/* strikers.ini [Network] key, from the same file zt_config reads. */
+void zt_ini_string(const char *key, const char *def, char *out, unsigned cap);
 void zt_start(void); /* idempotent, immediately returns; background worker */
 int zt_set_group_network(const char *network); /* validated enrollment; no active-network switching */
 void zt_set_group_peers(const uint64_t *nodes, unsigned count); /* complete last-good directory, atomic replacement */

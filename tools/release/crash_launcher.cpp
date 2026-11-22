@@ -10,6 +10,7 @@
 #include <fstream>
 #include <stdexcept>
 #include "gui_self_test.h"
+#include "../../runtime/core/report_send.h"
 
 static HWND launcher_, launch_status_, play_, update_;
 static bool running_, done_, started_;
@@ -107,13 +108,13 @@ static std::wstring quote(const std::wstring &s) {
 }
 
 static bool save_crash(const PROCESS_INFORMATION &p, DWORD tid, const EXCEPTION_RECORD &record,
-                       const std::wstring &user, const std::wstring &log) {
+                       const std::wstring &user, const std::wstring &log, std::wstring &base) {
     std::wstring folder=user+L"\\crashes";
     if(!CreateDirectoryW(folder.c_str(),nullptr) && GetLastError()!=ERROR_ALREADY_EXISTS) return false;
     SYSTEMTIME t; GetLocalTime(&t);
     wchar_t name[100]; swprintf_s(name,L"\\%04u%02u%02u-%02u%02u%02u-%lu",t.wYear,t.wMonth,t.wDay,
                                 t.wHour,t.wMinute,t.wSecond,p.dwProcessId);
-    std::wstring base=folder+name;
+    base=folder+name;
     HANDLE file=CreateFileW((base+L".dmp").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,0,nullptr);
     HANDLE thread=OpenThread(THREAD_GET_CONTEXT|THREAD_QUERY_INFORMATION,FALSE,tid);
     CONTEXT context={}; context.ContextFlags=CONTEXT_ALL;
@@ -127,12 +128,65 @@ static bool save_crash(const PROCESS_INFORMATION &p, DWORD tid, const EXCEPTION_
     if(file!=INVALID_HANDLE_VALUE) CloseHandle(file);
     std::ifstream input(log,std::ios::binary);
     std::ofstream output(base+L".txt",std::ios::binary);
-    output<<"Local crash report; never uploaded. Exception 0x"<<std::hex<<record.ExceptionCode
+    output<<"Crash report; sent only if the player says Yes. Exception 0x"<<std::hex<<record.ExceptionCode
           <<" at "<<record.ExceptionAddress<<"; minidump "<<(ok?"saved":"FAILED")<<"\r\n";
     // A bounded tail avoids copying multi-gigabyte logs into every crash report.
     input.seekg(0,std::ios::end); auto size=input.tellg();
     if(size>0) { input.seekg(size>65536?size-std::streamoff(65536):std::streamoff(0)); output<<input.rdbuf(); }
     return ok!=FALSE;
+}
+
+static std::string narrow(const std::wstring &w,UINT page=CP_UTF8) {
+    if(w.empty())return "";
+    int n=WideCharToMultiByte(page,0,w.c_str(),(int)w.size(),nullptr,0,nullptr,nullptr);
+    std::string s(n,'\0');WideCharToMultiByte(page,0,w.c_str(),(int)w.size(),s.data(),n,nullptr,nullptr);return s;
+}
+static std::wstring widen(const char *s) {
+    int n=MultiByteToWideChar(CP_UTF8,0,s,-1,nullptr,0);if(n<=1)return L"";
+    std::wstring w(n-1,L'\0');MultiByteToWideChar(CP_UTF8,0,s,-1,w.data(),n);return w;
+}
+// After a crash, on Yes: the crash's .txt and .dmp, the log and strikers.ini (private values out, user and PC names out of
+// every text file) zipped into userdata\reports, then sent to the developer's report service (runtime/core/report_send.c).
+// Returns what to tell the player.
+static std::wstring send_crash_report(const std::wstring &own,const std::wstring &user,const std::wstring &base,const std::wstring &ini) {
+    (void)own;
+    SYSTEMTIME t;GetLocalTime(&t);wchar_t name[64];
+    swprintf_s(name,L"crash-%04u%02u%02u-%02u%02u%02u",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond);
+    std::wstring reports=user+L"\\reports",dir=reports+L"\\"+name,zip=dir+L".zip";
+    CreateDirectoryW(reports.c_str(),nullptr);CreateDirectoryW(dir.c_str(),nullptr);
+    std::vector<std::wstring> texts;
+    if(!base.empty()) {
+        std::wstring leaf=base.substr(base.find_last_of(L"\\/")+1);
+        if(CopyFileW((base+L".txt").c_str(),(dir+L"\\"+leaf+L".txt").c_str(),FALSE))texts.push_back(dir+L"\\"+leaf+L".txt");
+        CopyFileW((base+L".dmp").c_str(),(dir+L"\\"+leaf+L".dmp").c_str(),FALSE);
+    }
+    if(CopyFileW((user+L"\\last-game.log").c_str(),(dir+L"\\last-game.log").c_str(),FALSE))texts.push_back(dir+L"\\last-game.log");
+    if(report_copy_settings(narrow(ini,CP_ACP).c_str(),narrow(dir+L"\\strikers.ini",CP_ACP).c_str()))texts.push_back(dir+L"\\strikers.ini");
+    {std::ofstream json(dir+L"\\report.json",std::ios::binary);
+     char made[32];sprintf_s(made,"%04u-%02u-%02uT%02u:%02u:%02u",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond);
+     json<<"{\"kind\":\"crash\",\"made\":\""<<made<<"\",\"description\":\"\"}\r\n";}
+    for(const auto &text:texts)report_redact_file(narrow(text,CP_ACP).c_str(),16u<<20);
+    ReportInfo info={};report_info_from_log(narrow(dir+L"\\last-game.log",CP_ACP).c_str(),&info);
+    strcpy_s(info.kind,"crash");
+    // One file: Windows' own tar writes zip archives (-a picks the format from the name), as F9's report does.
+    wchar_t system[MAX_PATH];GetSystemDirectoryW(system,MAX_PATH);
+    std::wstring tar=std::wstring(system)+L"\\tar.exe",cmd=quote(tar)+L" -a -c -f "+quote(std::wstring(name)+L".zip")+L" "+quote(name);
+    std::vector<wchar_t> line(cmd.begin(),cmd.end());line.push_back(0);
+    STARTUPINFOW si={sizeof(si)};PROCESS_INFORMATION p={};DWORD code=1;
+    if(CreateProcessW(tar.c_str(),line.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,reports.c_str(),&si,&p)) {
+        WaitForSingleObject(p.hProcess,60000);GetExitCodeProcess(p.hProcess,&code);CloseHandle(p.hThread);CloseHandle(p.hProcess);
+    }
+    if(code!=0||GetFileAttributesW(zip.c_str())==INVALID_FILE_ATTRIBUTES)
+        return L"The crash report could not be packed into one file. It stays in userdata\\crashes; you can attach it to a report on RecompLauncher or GitHub.";
+    WIN32_FIND_DATAW d;HANDLE h=FindFirstFileW((dir+L"\\*").c_str(),&d);
+    if(h!=INVALID_HANDLE_VALUE){do{if(!(d.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY))DeleteFileW((dir+L"\\"+d.cFileName).c_str());}while(FindNextFileW(h,&d));FindClose(h);}
+    RemoveDirectoryW(dir.c_str());
+    char url[512],id[32],why[300];report_url(narrow(ini,CP_ACP).c_str(),url,sizeof url);
+    if(!url[0])return L"Sending reports is turned off in strikers.ini. The crash report stays in userdata\\crashes.";
+    if(report_send(url,narrow(zip,CP_ACP).c_str(),&info,id,sizeof id,why,sizeof why))
+        return L"Sent. Report ID "+widen(id)+L". Thank you! Mention it if you post about the crash on RecompLauncher or GitHub.";
+    return L"The crash report could not be sent: "+widen(why)+L"\n\nIt was saved as userdata\\reports\\"+std::wstring(name)+
+           L".zip; you can attach that file to a report on RecompLauncher or GitHub.";
 }
 
 static int run_game(int argc,wchar_t **argv) {
@@ -199,7 +253,7 @@ static int run_game(int argc,wchar_t **argv) {
     DebugSetProcessKillOnExit(FALSE);
     if(launcher_)PostMessageW(launcher_,WM_APP+1,0,0);
     if(gui_test::enabled){std::ofstream state(gui_test::folder.parent_path()/L"launcher-child.json");state<<"{\"pid\":"<<p.dwProcessId<<"}";}
-    DEBUG_EVENT event={}; bool initial=true, dumped=false; DWORD exitcode=67;
+    DEBUG_EVENT event={}; bool initial=true, dumped=false; DWORD exitcode=67; std::wstring crash_base;
     while(WaitForDebugEvent(&event,INFINITE)) {
         DWORD disposition=DBG_CONTINUE;
         if(event.dwDebugEventCode==EXCEPTION_DEBUG_EVENT) {
@@ -209,7 +263,7 @@ static int run_game(int argc,wchar_t **argv) {
                 disposition=DBG_EXCEPTION_NOT_HANDLED;
                 if(!e.dwFirstChance && !dumped) {
                     dumped=true; FlushFileBuffers(out);
-                    save_crash(p,event.dwThreadId,e.ExceptionRecord,user,log);
+                    save_crash(p,event.dwThreadId,e.ExceptionRecord,user,log,crash_base);
                 }
             }
         } else if(event.dwDebugEventCode==CREATE_PROCESS_DEBUG_EVENT) {
@@ -225,7 +279,19 @@ static int run_game(int argc,wchar_t **argv) {
         ContinueDebugEvent(event.dwProcessId,event.dwThreadId,disposition);
     }
     CloseHandle(out); CloseHandle(p.hThread); CloseHandle(p.hProcess);
-    if(dumped && !test && !gui_test::enabled) MessageBoxW(nullptr,L"The game closed unexpectedly. A report was saved in userdata\\crashes; send it to your organizer if you choose.",L"Strikers Recomp",MB_OK|MB_ICONERROR);
+    // Asked every time, and nothing leaves the PC unless the answer is Yes. STRIKERS_REPORT_TEST_ANSWER=yes|no answers for a test
+    // run (--crash-test), and the result is written to <userdata>\report-result.txt instead of a message box.
+    wchar_t answer[8]={0}; bool scripted=GetEnvironmentVariableW(L"STRIKERS_REPORT_TEST_ANSWER",answer,8)>0;
+    if(dumped && (scripted || (!test && !gui_test::enabled))) {
+        bool yes=scripted?!_wcsicmp(answer,L"yes"):MessageBoxW(nullptr,
+            L"The game closed unexpectedly.\n\nSend the crash report to the developer? It contains the game's log, a memory snapshot of "
+            L"the game when it crashed, and your PC's processor, graphics card, Windows version and memory. Your Windows user name "
+            L"and PC name are taken out of file paths.\n\nA copy stays in userdata\\crashes either way.",
+            L"Strikers Recomp",MB_YESNO|MB_ICONERROR|MB_DEFBUTTON1)==IDYES;
+        std::wstring result=yes?send_crash_report(own,user,crash_base,ini):L"";
+        if(scripted){std::ofstream(user+L"\\report-result.txt",std::ios::binary)<<narrow(yes?result:L"not asked to send");}
+        else if(yes)MessageBoxW(nullptr,result.c_str(),L"Strikers Recomp",MB_OK|MB_ICONINFORMATION);
+    }
     return (int)exitcode;
 }
 

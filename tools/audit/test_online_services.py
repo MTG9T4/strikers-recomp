@@ -69,7 +69,7 @@ def main():
         cmd = [str(cl), '/nologo', '/LD', '/MD', '/O2', '/std:c11', '/W3', '/we4013',
                '/D_CRT_SECURE_NO_WARNINGS', '/DWIN32_LEAN_AND_MEAN',
                *['/I' + str(ROOT / p) for p in ('runtime/core', 'runtime/services', 'build/gen')], str(src),
-               *[str(ROOT / 'runtime/services' / n) for n in ('zt_transport.c', 'net_sim.c', 'network_policy.c', 'nnaccount.c', 'nnfriends.c',
+               *[str(ROOT / 'runtime/services' / n) for n in ('zt_transport.c', 'relay_transport.c', 'net_sim.c', 'network_policy.c', 'nnaccount.c', 'nnfriends.c',
                    'nnldn.c', 'nnnifm.c', 'nnsocket.c', 'nnssl.c', 'nnnet.c')], '/link', '/OUT:' + str(dll), 'ws2_32.lib']
         r = subprocess.run(cmd, env=env, cwd=scratch, capture_output=True, text=True)
         (out / 'build.log').write_text(r.stdout+r.stderr)

@@ -1,0 +1,29 @@
+name = "strikers-reports"
+main = "src/index.ts"
+compatibility_date = "2026-11-05"
+workers_dev = true
+# The address built into the game (STRIKERS_REPORT_URL_DEFAULT in runtime/core/report_send.c). A custom domain on a
+# zone already on the account costs nothing.
+routes = [{ pattern = "reports.mtg9t4.fun", custom_domain = true }]
+
+# Report zips and one usage record a month. `wrangler kv namespace create REPORTS` prints the id to put here.
+[[kv_namespaces]]
+binding = "REPORTS"
+id = "00000000000000000000000000000000"
+
+# 2 reports a minute from one address (the period can only be 10 or 60 seconds).
+[[ratelimits]]
+name = "REPORT_LIMIT"
+namespace_id = "24890"
+simple = { limit = 2, period = 60 }
+
+# Both keep the service inside the free allowances on any plan: 300 reports a day is 600 of the 1,000 free KV writes,
+# and 900 MB stays under the 1 GB of free KV storage. When either is reached, players get "full" and keep the report.
+[vars]
+DAILY_CAP = "300"
+STORE_CAP_MB = "900"
+# Required secret: ADMIN_TOKEN (`wrangler secret put ADMIN_TOKEN`).
+
+[observability]
+enabled = true
+head_sampling_rate = 1

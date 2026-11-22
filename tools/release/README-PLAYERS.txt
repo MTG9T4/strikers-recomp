@@ -1,7 +1,9 @@
 STRIKERS RECOMP — PLAYER SETUP (Mario Strikers: Battle League on PC)
 
 Use 64-bit Windows 10 version 1903 or later, or Windows 11, with a Vulkan-capable
-graphics driver and at least 20 GB free space. Extract the ZIP into a folder you can write
+graphics driver and at least 20 GB free space. The game's videos need Windows'
+free VP9 Video Extensions (Microsoft Store); without them videos stay black and
+the loading screen after a match never ends. Extract the ZIP into a folder you can write
 to, such as a folder in Documents. Do not run Setup from inside the ZIP.
 
 1. On your own Switch, extract the game's files with a homebrew dump tool
@@ -55,22 +57,26 @@ Textures: make a folder textures\dump and the game saves every texture it loads
 there as <code>_<size>.png; a textures\<code>.png replaces that texture (ASTC,
 RGBA and one-channel textures, the most of this game's).
 
-PLAY TOGETHER: Your organizer sends you an invite code. On the start screen
-choose ONLINE (in the game: F1, then ONLINE), paste the code, enter your name
-and choose Join. Wait for Connected.
-One friend chooses Quick Battle > Local Wireless and creates a room. Everyone
-else selects that room. Any friend can host. Use the same release version.
-This is Local Wireless over the private group, not Nintendo Online Play.
+PLAY TOGETHER: One player chooses Quick Battle > Local Wireless and creates a
+room; the others choose it from the list. Rooms from PCs on the same network
+and from the internet show up together, with nothing to set up. Everyone needs
+the same release version. To play only with your friends, everyone types the
+same room key in F1 > Online. Internet rooms go through the project's relay
+server, which sees your IP address and keeps no record of it. Internet rooms
+are coming soon: until the relay is online, rooms on the same network work and
+internet rooms switch on by themselves once it starts.
+This is Local Wireless, not Nintendo Online Play.
 
-IF SOMETHING LOOKS WRONG IN THE GAME: press F9. It saves one file,
-userdata\reports\report-<date>.zip, with a screenshot, the logs and your settings
-(your invite code is left out). Send it to your organizer if you choose.
+IF SOMETHING LOOKS WRONG IN THE GAME: press F1, open Report, say what happened
+and press Send report. It sends the logs, your PC's processor, graphics card,
+Windows version and memory, your settings (invite code and room key left out)
+and a screenshot to the developer, with your user name and PC name taken out.
+Nothing is sent unless you press Send. F9 saves the same report in
+userdata\reports without sending it.
 
-IF SOMETHING FAILS: Send installer\setup.log for setup errors, or
-userdata\last-game.log (previous-game.log holds the run before) and the latest
-userdata\crashes report for game crashes
-to your organizer if you choose. Reports are never sent automatically.
-A crash report can show your Windows user name and your friends' display names.
+IF THE GAME CRASHES: the launcher asks whether to send the crash report. Yes
+sends the log and a memory snapshot of the game; No sends nothing. A copy stays
+in userdata\crashes. For setup errors keep installer\setup.log.
 Never send your game files, userdata\zerotier\identity.secret, or
 userdata\group-credential.dat. For an expired group code, ask for a new code;
 do not reinstall or copy another friend's userdata. See docs\PLAYING.md.
