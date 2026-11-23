@@ -46,6 +46,9 @@ def main():
                       ['mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'ole32.lib', 'shlwapi.lib'])
         assert movie.movie_test() == 0, 'MF format-3 texture/format-4 bounds regression'
         log.append('Movie: direct native texture, unchanged handle storage, red colour, small capacity and short source PASS')
+        black = movie.black_video_test()
+        assert black == 0, f'no-decoder video track as black pictures: {black:#x}'
+        log.append('Movie: a video track without a decoder plays black pictures at the frame rate, seeks, and ends PASS')
         for enabled, limited, frames in ((0, 0, 0), (1, 1, 48000), (1, 0, 1536)):
             path = tmp / f'capture-{enabled}-{limited}.wav'
             assert audio.wav_test(os.fsencode(path), limited, enabled) == 0

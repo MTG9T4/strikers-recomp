@@ -86,7 +86,11 @@
  * N; or it has no decoder for a track: no VP9 Video Extensions, no Vorbis decoder; or the first read fails; or there is
  * no H.264 decoder transform): the FFmpeg fallback (mf_ffmpeg.c, plat_mf.c on FFmpeg's DLLs) takes that movie over,
  * when its DLLs are there. A movie Media Foundation plays goes exactly the way it went before. STRIKERS_MOVIE_FFMPEG=1
- * uses FFmpeg for every movie (tests), STRIKERS_MOVIE_FFMPEG=0 never. */
+ * uses FFmpeg for every movie (tests), STRIKERS_MOVIE_FFMPEG=0 never. A video track that neither can decode (no VP9 Video
+ * Extensions and no FFmpeg DLLs, the release as shipped) plays as black pictures for the movie's duration, then ends, so
+ * the game goes on (black_start; a SeekTo then leaves the reader alone while none of its streams is selected, see
+ * ext_SeekTo; STRIKERS_MOVIE_BLACK=0 leaves the track unselected as before; TEST ONLY
+ * STRIKERS_MOVIE_TEST_NO_VIDEO_DECODER=1 makes every video track undecodable). */
 #define COBJMACROS
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -414,6 +418,8 @@ typedef struct {
     uint32_t fourcc;
     int failed;                                       /* close4: the source reader's decoder reported an error for this track */
     int bt709, full_range;
+    int black;                                        /* a video track Windows has no decoder for: black pictures (black_start) */
+    int64_t black_n;                                  /* the next black picture's number (its time is black_n / fps) */
 } Track;
 
 typedef struct Ext {
@@ -432,6 +438,10 @@ typedef struct Ext {
     unsigned long long seek_base;                     /* samples_read at the last SeekTo (STRIKERS_SKIP_MOVIES counts from there) */
     int skip_eos;                                     /* (hs13) STRIKERS_SKIP_MOVIES ended this stream early */
     volatile uint64_t gen;                           /* bumped by SeekTo: samples read before it are refused by the decoders */
+    IMFMediaBuffer *black_buf;                        /* one black NV12 picture, shared by every black sample (read only) */
+    int black_w, black_h;
+    int seek_pending;                                 /* a SeekTo while the reader had no stream selected (ext_SeekTo) */
+    int64_t seek_pending_us;
 } Ext;
 
 /* Decoder buffer model, as in the real library [subsdk DecoderImpl 0x1e440 Flush, 0x1fa30 AcquireInputBufferIndex,
@@ -751,6 +761,58 @@ static int ext_probe_tracks(Ext *e, size_t size) {
     return 1;
 }
 
+/* A video track Windows has no decoder for (no VP9 Video Extensions: SetCurrentMediaType fails with
+ * MF_E_TOPO_CODEC_NOT_FOUND, c00d5212) plays as black pictures. Before, the track was left unselected: the movie had no
+ * video samples, its video decoder never got an end of stream, and the game waited for that movie for ever (a player's
+ * log: memory.webm, the loading movie after a match, "end of stream after 0 samples", then the loading screen for good).
+ * Now the extractor hands out what a decoder would have: one black NV12 picture of the track's size per frame period, at
+ * the track's times, up to the movie's duration, then the end of stream, so every movie ends and the game goes on.
+ * Its audio, if any, plays as before. A track that decodes is never touched. STRIKERS_MOVIE_BLACK=0: the old way (test). */
+static int black_enabled(void) {
+    static int on = -1;
+    if (on < 0) { const char *v = getenv("STRIKERS_MOVIE_BLACK"); on = !(v && v[0] == '0'); }
+    return on;
+}
+static double black_fps(const Track *tr) { return tr->fps >= 1.0 && tr->fps <= 240.0 ? tr->fps : 30.0; }
+static int64_t black_time(const Track *tr, int64_t n) { return (int64_t)((double)n * 1e6 / black_fps(tr) + 0.5); }
+static void black_start(Ext *e, int i, HRESULT why) {
+    Track *tr = &e->tr[i];
+    if (tr->w <= 0 || tr->h <= 0) { tr->w = 16; tr->h = 16; }    /* no size in the container: any small picture will do */
+    tr->black = 1; tr->black_n = 0;
+    const char *fix = strcmp(tr->mime, "video/x-vnd.on2.vp9") == 0 ? "install 'VP9 Video Extensions' from the Microsoft Store to see it" :
+                      strcmp(tr->mime, "video/x-vnd.on2.vp8") == 0 ? "install 'Web Media Extensions' from the Microsoft Store to see it" :
+                      "this PC needs a decoder for it";
+    printf("movie: %s plays BLACK: Windows has no decoder for its video (track %d, %s, %08lx); %dx%d, %.2f fps, %.2f s of black "
+           "pictures, then the game goes on; %s\n", e->path, i, tr->mime, (unsigned long)why, tr->w, tr->h, black_fps(tr), e->duration_us / 1e6, fix);
+}
+static void black_seek(Ext *e, int64_t us) {        /* SeekTo: the next black picture is the one shown at `us` */
+    for (int i = 0; i < e->ntracks; i++) {
+        Track *tr = &e->tr[i];
+        if (tr->black) tr->black_n = us > 0 ? (int64_t)((double)us * black_fps(tr) / 1e6) : 0;
+    }
+}
+/* One black picture at `us` (a new sample over the shared black buffer), or NULL. Caller holds the lock. */
+static IMFSample *black_sample(Ext *e, Track *tr, int64_t us) {
+    size_t w = (size_t)tr->w, h = (size_t)tr->h, ysize = w * h, need = ysize + w * ((h + 1) / 2);
+    if (e->black_buf && (e->black_w != tr->w || e->black_h != tr->h)) { IMFMediaBuffer_Release(e->black_buf); e->black_buf = NULL; }
+    if (!e->black_buf) {
+        IMFMediaBuffer *b = NULL; BYTE *p = NULL;
+        if (FAILED(new_buffer(e->rd, (DWORD)need, &b)) || !b) return NULL;
+        if (FAILED(IMFMediaBuffer_Lock(b, &p, NULL, NULL)) || !p) { IMFMediaBuffer_Release(b); return NULL; }
+        memset(p, tr->full_range ? 0 : 16, ysize);   /* Y: black in the track's range */
+        memset(p + ysize, 128, need - ysize);         /* UV: no colour */
+        IMFMediaBuffer_Unlock(b);
+        IMFMediaBuffer_SetCurrentLength(b, (DWORD)need);
+        e->black_buf = b; e->black_w = tr->w; e->black_h = tr->h;
+    }
+    IMFSample *s = NULL;
+    if (FAILED(new_sample(e->rd, &s)) || !s) return NULL;
+    if (FAILED(IMFSample_AddBuffer(s, e->black_buf))) { IMFSample_Release(s); return NULL; }
+    IMFSample_SetSampleTime(s, us * 10);
+    IMFSample_SetSampleDuration(s, (LONGLONG)(1e7 / black_fps(tr) + 0.5));
+    return s;
+}
+
 #ifdef MOVIE_FFMPEG
 /* Media Foundation opened the movie but cannot decode it (no decoder for track `track`, or the first read failed): the
  * same file goes to the FFmpeg fallback, read back from the byte stream, and the tracks selected so far are selected
@@ -791,14 +853,22 @@ static int ext_switch_to_ffmpeg(Ext *e, int track, HRESULT why) {
     if (track >= 0) printf("movie: %s: Media Foundation cannot decode track %d (%s, %08lx): the FFmpeg fallback plays this movie\n", e->path, track, e->tr[track].mime, why);
     else printf("movie: %s: Media Foundation's first read failed (%08lx): the FFmpeg fallback plays this movie\n", e->path, why);
     IMFSourceReader_SetStreamSelection(e->rd, (DWORD)MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    if (e->black_buf) { IMFMediaBuffer_Release(e->black_buf); e->black_buf = NULL; }    /* a black track gets FFmpeg's decoder */
     for (int j = 0; j < e->ntracks; j++) {
-        e->tr[j].eos = 0; e->tr[j].failed = 0;
+        e->tr[j].eos = 0; e->tr[j].failed = 0; e->tr[j].black = 0;
         if (e->tr[j].selected && j != track) { e->tr[j].selected = 0; ext_select(e, j, 1); }
     }
     e->eos = 0;
     return 1;
 }
 #endif
+
+static HRESULT ext_reader_seek(Ext *e, int64_t us) {  /* only with a stream selected: see ext_SeekTo */
+    PROPVARIANT var; PropVariantInit(&var);
+    var.vt = VT_I8; var.hVal.QuadPart = (LONGLONG)us * 10;
+    e->seek_pending = 0;
+    return IMFSourceReader_SetCurrentPosition(e->rd, &GUID_NULL, &var);
+}
 
 static int ext_select(Ext *e, int i, int on) {
     if (!e->rd || i < 0 || i >= e->ntracks) return ST_INVALID;
@@ -829,6 +899,16 @@ static int ext_select(Ext *e, int i, int on) {
 #ifdef MOVIE_FFMPEG
         if (ffmf_test() == 2 && !FFMF_IS(e->rd)) hr = MF_E_TOPO_CODEC_NOT_FOUND;     /* TEST ONLY: no Media Foundation decoder */
 #endif
+        {   /* TEST ONLY, STRIKERS_MOVIE_TEST_NO_VIDEO_DECODER=1: no decoder for any video track, as on a PC without VP9 Video
+             * Extensions (in every build, unlike STRIKERS_MOVIE_TEST_MF, which needs the FFmpeg fallback compiled in) */
+            static int no_video = -1;
+            if (no_video < 0) { const char *v = getenv("STRIKERS_MOVIE_TEST_NO_VIDEO_DECODER"); no_video = v && atoi(v) != 0; if (no_video) printf("movie: TEST: STRIKERS_MOVIE_TEST_NO_VIDEO_DECODER=1\n"); }
+            if (no_video && tr->kind == 0
+#ifdef MOVIE_FFMPEG
+                && !FFMF_IS(e->rd)
+#endif
+                ) hr = MF_E_TOPO_CODEC_NOT_FOUND;
+        }
         if (SUCCEEDED(hr)) {
             IMFMediaType *cur = NULL;
             if (SUCCEEDED(IMFSourceReader_GetCurrentMediaType(e->rd, (DWORD)i, &cur))) {
@@ -840,9 +920,17 @@ static int ext_select(Ext *e, int i, int on) {
 #ifdef MOVIE_FFMPEG
             if (ext_switch_to_ffmpeg(e, i, hr)) return ext_select(e, i, on);
 #endif
+            IMFSourceReader_SetStreamSelection(e->rd, (DWORD)i, FALSE);
+            if (tr->kind == 0 && black_enabled()) {  /* the reader no longer reads it; the extractor makes its pictures */
+                if (e->have_pending && e->pend_track == i) release_pending(e);
+                release_ahead(e, i);
+                black_start(e, i, hr);
+                tr->selected = 1; tr->eos = 0;
+                printf("movie: selected track %d (%s) as black pictures\n", i, tr->mime);
+                return ST_OK;
+            }
             printf("movie: track %d (%s): no Media Foundation decoder path to %s (%08lx); track left unselected\n", i, tr->mime, tr->kind == 0 ? "NV12" : "PCM", hr);
             if (tr->kind == 1 && strcmp(tr->mime, "audio/vorbis") == 0) vorbis_hint();
-            IMFSourceReader_SetStreamSelection(e->rd, (DWORD)i, FALSE);
             return ST_UNSUPPORTED;
         }
     }
@@ -850,6 +938,11 @@ static int ext_select(Ext *e, int i, int on) {
     release_ahead(e, i);
     tr->selected = on && SUCCEEDED(hr);
     tr->eos = 0;
+    if (!on) tr->black = 0;                           /* selected again later: the decoder is looked for again */
+    if (tr->selected && e->seek_pending) {            /* the seek made while the reader had no stream selected */
+        HRESULT sh = ext_reader_seek(e, e->seek_pending_us);
+        printf("movie: track %d selected after a seek: the reader seeks to %.3f s now (%08lx)\n", i, e->seek_pending_us / 1e6, sh);
+    }
     printf("movie: %s track %d (%s)%s\n", on ? "selected" : "unselected", i, tr->mime, SUCCEEDED(hr) ? "" : " FAILED");
     return SUCCEEDED(hr) ? ST_OK : ST_FAILED;
 }
@@ -878,7 +971,16 @@ static int ext_fill(Ext *e) {
     for (int i = 0; i < e->ntracks; i++) {
         Track *tr = &e->tr[i];
         if (!tr->selected) continue;
-        for (int guard = 0; !e->ahead[i].have && !tr->eos && guard < 256; guard++) {
+        if (tr->black && !e->ahead[i].have && !tr->eos) {     /* no decoder: the next black picture, or the end (black_start) */
+            int64_t us = black_time(tr, tr->black_n);
+            IMFSample *s = tr->black_n > 0 && us >= e->duration_us ? NULL : black_sample(e, tr, us);   /* at least one picture */
+            if (s) { e->ahead[i].have = 1; e->ahead[i].s = s; e->ahead[i].us = us; e->samples_read++; tr->black_n++; }
+            else {
+                if (tr->black_n == 0 || us < e->duration_us) printf("movie: %s: no memory for a black picture: its video ends here\n", e->path);
+                tr->eos = 1;
+            }
+        }
+        for (int guard = 0; !tr->black && !e->ahead[i].have && !tr->eos && guard < 256; guard++) {
             DWORD idx = 0, flags = 0; LONGLONG ts = 0; IMFSample *s = NULL;
             HRESULT hr = IMFSourceReader_ReadSample(e->rd, (DWORD)i, 0, &idx, &flags, &ts, &s);
 #ifdef MOVIE_FFMPEG
@@ -923,7 +1025,8 @@ static void ext_dtor_common(Ctx *c, int deleting) {
         release_ahead(e, -1);
         if (e->rd) IMFSourceReader_Release(e->rd);
         if (e->bs) IMFByteStream_Release(e->bs);
-        e->rd = NULL; e->bs = NULL;
+        if (e->black_buf) IMFMediaBuffer_Release(e->black_buf);
+        e->rd = NULL; e->bs = NULL; e->black_buf = NULL;
         ext_unlock(e);
         DeleteCriticalSection(&e->cs);
         printf("movie: Extractor destroyed (%llu samples read)\n", e->samples_read);
@@ -1082,11 +1185,18 @@ static void ext_SeekTo(Ctx *c) {                      /* (int64 timeUs) */
     release_ahead(e, -1);
     e->gen++;
     e->seek_base = e->samples_read;
-    PROPVARIANT var; PropVariantInit(&var);
-    var.vt = VT_I8; var.hVal.QuadPart = (LONGLONG)A1 * 10;
-    HRESULT hr = IMFSourceReader_SetCurrentPosition(e->rd, &GUID_NULL, &var);
+    /* (2026-11-22) The reader's SetCurrentPosition never returns when none of its streams is selected (it waits for a
+     * stream to confirm the seek): with no VP9 decoder every movie is such a reader, and the game's main thread stood in
+     * this call for good (the hang after a match; in the Quick Battle menu in the test). Nothing is read from it then, so
+     * the seek is only kept for a stream selected later (ext_select). Black tracks have their own position (black_seek). */
+    int reading = 0;
+    for (int i = 0; i < e->ntracks; i++) reading += e->tr[i].selected && !e->tr[i].black;
+    HRESULT hr = S_OK;
+    if (reading) hr = ext_reader_seek(e, (int64_t)A1);
+    else { e->seek_pending = 1; e->seek_pending_us = (int64_t)A1; }
     e->eos = 0;
     for (int i = 0; i < e->ntracks; i++) e->tr[i].eos = 0;
+    black_seek(e, (int64_t)A1);
     ext_unlock(e);
     printf("movie: SeekTo(%.3f s) %08lx (tick %llu)\n", (int64_t)A1 / 1e6, hr, (unsigned long long)GetTickCount64());
     if (rearm) skip_rearm(e);

@@ -80,3 +80,57 @@ __declspec(dllexport) int movie_test(void) {
     IMFMediaBuffer_Release(b); IMFSample_Release(s); MFShutdown();
     return result;
 }
+
+/* A video track with no decoder plays as black pictures: right size, one per frame period from the seek position, and
+ * then the end of stream, so the game's movie ends as it would with the decoder. The reader is never called for a black
+ * track (only its pointer must be set), so a dummy one stands in. */
+__declspec(dllexport) int black_video_test(void) {
+    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_LITE))) return 1;
+    int result = 0;
+    Ext *e = calloc(1, sizeof *e);
+    e->rd = (IMFSourceReader *)(uintptr_t)0x10;           /* never dereferenced for a black track */
+    strcpy(e->path, "memory.webm");
+    e->duration_us = 100000;                             /* 0.1 s at 30 fps: pictures at 0, 33333 and 66667 us */
+    e->ntracks = 1;
+    Track *tr = &e->tr[0];
+    tr->kind = 0; tr->w = 6; tr->h = 4; tr->fps = 30.0; strcpy(tr->mime, "video/x-vnd.on2.vp9");
+    black_start(e, 0, MF_E_TOPO_CODEC_NOT_FOUND);
+    tr->selected = 1;
+    int64_t want[3] = {0, 33333, 66667};
+    for (int k = 0; k < 3; k++) {
+        if (ext_fill(e) != ST_OK || e->pend_track != 0 || e->pend_us != want[k]) { result |= 2 << k; break; }
+        if (k == 0) {                                    /* the picture, as the decoder hands it to the game (format 4) */
+            Dec d = {0}; d.is_video = 1; d.fmt = 4; d.w = 6; d.h = 4;
+            OutBuf o = {0}; o.s = e->pending;
+            unsigned char px[6 * 4 + 6 * 2 + 1]; memset(px, 0xa5, sizeof px);
+            if (copy_sample(&d, &o, px, sizeof px) != 36) result |= 16;
+            for (int j = 0; j < 24; j++) if (px[j] != 16) result |= 32;
+            for (int j = 24; j < 36; j++) if (px[j] != 128) result |= 64;
+            if (px[36] != 0xa5) result |= 128;
+        }
+        release_pending(e);                              /* Advance */
+    }
+    if (ext_fill(e) != ST_END || !e->eos || !tr->eos) result |= 256;
+    /* the game's SeekTo to 0.05 s: the reader, with no stream selected, is not called (its SetCurrentPosition would never
+     * return; the dummy pointer would fault here); the black track starts again at the picture shown then (33333 us) */
+    InitializeCriticalSection(&e->cs);
+    uint64_t guest[2] = {0, (uint64_t)(uintptr_t)e};
+    Ctx c = {0}; c.x[0] = (uint64_t)(uintptr_t)guest; c.x[1] = 50000;
+    ext_SeekTo(&c);
+    if (c.x[0] != ST_OK || e->eos || tr->eos || !e->seek_pending || e->seek_pending_us != 50000) result |= 16384;
+    if (ext_fill(e) != ST_OK || e->pend_us != 33333) result |= 512;
+    release_pending(e);
+    if (ext_fill(e) != ST_OK || e->pend_us != 66667) result |= 1024;
+    release_pending(e);
+    if (ext_fill(e) != ST_END) result |= 2048;
+    /* an unknown duration: one black picture, then the end */
+    e->duration_us = 0; e->eos = 0; tr->eos = 0; black_seek(e, 0);
+    if (ext_fill(e) != ST_OK || e->pend_us != 0) result |= 4096;
+    release_pending(e);
+    if (ext_fill(e) != ST_END) result |= 8192;
+    if (e->black_buf) IMFMediaBuffer_Release(e->black_buf);
+    DeleteCriticalSection(&e->cs);
+    free(e);
+    MFShutdown();
+    return result;
+}

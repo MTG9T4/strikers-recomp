@@ -2,8 +2,8 @@ STRIKERS RECOMP — PLAYER SETUP (Mario Strikers: Battle League on PC)
 
 Use 64-bit Windows 10 version 1903 or later, or Windows 11, with a Vulkan-capable
 graphics driver and at least 20 GB free space. The game's videos need Windows'
-free VP9 Video Extensions (Microsoft Store); without them videos stay black and
-the loading screen after a match never ends. Extract the ZIP into a folder you can write
+free VP9 Video Extensions (Microsoft Store); without them the videos are black
+and the game goes on. Extract the ZIP into a folder you can write
 to, such as a folder in Documents. Do not run Setup from inside the ZIP.
 
 1. On your own Switch, extract the game's files with a homebrew dump tool

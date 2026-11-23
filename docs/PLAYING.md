@@ -232,10 +232,11 @@ Send. **F9** saves the same report in `userdata\reports` without sending it.
   same originals. Setup validates them again and resumes completed steps;
   incomplete compiler outputs are rebuilt. Keep the originals outside the
   installer's `build`, `installer`, `toolchain` and `userdata` folders.
-- **Videos are black, or the loading screen after a match never ends:** install
-  the free **VP9 Video Extensions** and **Web Media Extensions** from the
-  Microsoft Store, then start the game again. The game plays its videos with
-  them; without them a video never starts and the game waits for it.
+- **Videos are black:** install the free **VP9 Video Extensions** and **Web
+  Media Extensions** from the Microsoft Store, then start the game again. The
+  game plays its videos with them; without them each video plays as a black
+  screen for its length and the game goes on. (Before 0.2.1 the loading screen
+  after a match could wait for good instead: update to 0.2.1 or later.)
 - **The game will not launch:** make sure the ZIP was completely extracted and
   setup finished. Send `userdata\last-game.log` to the organizer. A graphics
   driver without Vulkan support cannot run this renderer.
