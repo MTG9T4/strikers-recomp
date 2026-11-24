@@ -33,7 +33,7 @@ typedef struct VStage {
     int clip_mode;                                /* snapshot used by static pre-rasterization state */
     uint64_t spv; int mod_users, mod_rel;          /* spv: name of the stage's SPIR-V file; the module is used by mod_users threads now and may be released (mod_rel) once its library or compute pipeline is made (stage_mod_get) */
 } VStage;
-#define MX_VK_VERSION 20u                        /* clip-mode-safe pre-rasterization libraries; colour Dref; 18: smask (audit 02); 19: cached fragment scale class; 20: pass-through geometry stages */
+#define MX_VK_VERSION 21u                        /* clip-mode-safe pre-rasterization libraries; colour Dref; 18: smask (audit 02); 19: cached fragment scale class; 20: pass-through geometry stages; 21: their point size only for points */
 typedef struct { uint32_t magic; int32_t stage, code_len; uint32_t key[4], fo; uint64_t spv, hb; uint32_t cbufs, ssbos, ssbo_w, images, dep, tex_units, in_attr, out_attr; int32_t uses_alpha, nsmp, clip_mode; uint32_t smask, scale_class; VSmp smp[64]; } StageRec;
 typedef struct { uint32_t magic, key[4], fo, dep, tex, smask; uint64_t vh; } VarRec;      /* ..\cache\vk\stage\<stage>_<hb>.var: the variants of one code */
 #define STAGEREC_MAGIC (0x52545356u + MX_VK_VERSION)
@@ -828,6 +828,49 @@ static void gpl_optimise(Pipe *p) {                /* a worker */
 }
 /* Makes the pipeline of p->k (any thread, no lock: the device calls are thread-safe, the pipeline cache is synchronised by
  * the driver), then marks it made. Returns the milliseconds it took. */
+/* (2026-11-23) AMD's Windows driver (amdvlk64 32.0.21045.x) faulted inside vkCreateGraphicsPipelines on 0.2.x's first
+ * pipeline with a geometry stage (the crowd's pass-through stage, at a stadium's loading): a null read in the driver, and
+ * the game was gone (five crash reports, three PCs). A fault while making a pipeline with a geometry stage is caught here:
+ * the draws with a geometry stage are left out from then on (the stands stay empty, as before 0.2.0; the lightning effects
+ * go too), and cache/vk/gs-off-<vendor>-<device>-<driver>.txt keeps later starts on this driver from trying again (delete it
+ * to try again; another driver version tries by itself). These few pipelines get no pipeline cache, so a fault cannot leave
+ * the cache's lock held. TEST ONLY STRIKERS_VK_TEST_GS_FAULT=1: a fault in place of the driver's. */
+static volatile LONG g_gs_off = -1;
+static const char *gs_off_file(void) {
+    char n[64];
+    snprintf(n, sizeof n, "gs-off-%04x-%04x-%08x.txt", V.props.vendorID, V.props.deviceID, V.props.driverVersion);
+    return vkc_file(n);
+}
+static int gs_off(void) {
+    if (g_gs_off < 0) {
+        FILE *fp = fopen(gs_off_file(), "rb");
+        if (fp) fclose(fp);
+        if (InterlockedCompareExchange(&g_gs_off, fp != NULL, -1) == -1 && fp)
+            printf("nvn_vk: %s: the graphics driver faulted making a pipeline with a geometry stage on an earlier start; draws with a geometry stage are left out (the stands have no crowd). Delete the file to try again\n", gs_off_file());
+    }
+    return g_gs_off > 0;
+}
+static VkResult gs_create_guarded(const VkGraphicsPipelineCreateInfo *gi, VkPipeline *out, int *faulted) {
+    static int test = -1;
+    if (test < 0) test = getenv("STRIKERS_VK_TEST_GS_FAULT") && atoi(getenv("STRIKERS_VK_TEST_GS_FAULT"));
+    *faulted = 0;
+    __try {
+        if (test) { volatile uintptr_t bad = 0x130; *(volatile int *)bad = 0; }      /* TEST ONLY: the driver's fault, read at 0x130 */
+        return vkCreateGraphicsPipelines(V.device, VK_NULL_HANDLE, 1, gi, NULL, out);
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        *faulted = 1; *out = VK_NULL_HANDLE;
+        return VK_ERROR_UNKNOWN;
+    }
+}
+static void gs_fault_note(const Pipe *p) {
+    InterlockedExchange(&g_gs_off, 1);
+    printf("nvn_vk: the graphics driver FAULTED making a pipeline with a geometry stage (vertex stage %u, geometry stage %u, fragment stage %u; %s, driver 0x%08x): "
+           "the game goes on without the draws with a geometry stage (the stands have no crowd); %s keeps later starts on this driver from trying again\n",
+           p->k.vs, p->gs ? p->gs->id : 0, p->k.fs, V.props.deviceName, V.props.driverVersion, gs_off_file());
+    FILE *fp = fopen(gs_off_file(), "wb");
+    if (fp) { fprintf(fp, "The graphics driver faulted making a pipeline with a geometry stage: %s, driver 0x%08x. Delete this file to try again.\n", V.props.deviceName, V.props.driverVersion); fclose(fp); }
+    fflush(stdout);
+}
 static double pipe_build(Pipe *p) {
     const PKey *k = &p->k;
     VStage *vs = p->vs, *fs = p->fs;
@@ -944,7 +987,17 @@ static double pipe_build(Pipe *p) {
     VkGraphicsPipelineCreateInfo gi = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     gi.pNext = &ri; gi.stageCount = nst; gi.pStages = st; gi.pInputAssemblyState = &ia; gi.pViewportState = &vp; gi.pRasterizationState = &rs; gi.pMultisampleState = &ms;
     gi.pDepthStencilState = &ds; gi.pColorBlendState = &cb; gi.pDynamicState = &dy; gi.layout = p->layout;
-    VkResult r = vkCreateGraphicsPipelines(V.device, g_pcache, 1, &gi, NULL, &p->p);
+    int faulted = 0;
+    VkResult r = p->gs ? gs_create_guarded(&gi, &p->p, &faulted) : vkCreateGraphicsPipelines(V.device, g_pcache, 1, &gi, NULL, &p->p);
+    if (faulted) {                                 /* the driver faulted (gs_create_guarded): no pipeline, its draws are left out */
+        stage_mod_put(vs); stage_mod_put(p->gs); if (fs) stage_mod_put(fs);
+        gs_fault_note(p);
+        EnterCriticalSection(&g_sh_lock);
+        p->state = 2;
+        WakeAllConditionVariable(&g_sh_cv);
+        LeaveCriticalSection(&g_sh_lock);
+        return 0.0;
+    }
     r = pipe_retry(r, 0, &gi, &p->p, "a whole pipeline");
     stage_mod_put(vs); if (p->gs) stage_mod_put(p->gs); if (fs) stage_mod_put(fs);
     if (r != VK_SUCCESS) vkd_fail("vkCreateGraphicsPipelines (vertex stage %u, fragment stage %u, geometry stage %u, %d colour targets, depth format %d): %s", k->vs, k->fs, p->gs ? p->gs->id : 0, k->ncolor, k->dfmt, vk_result_name(r));
@@ -1177,7 +1230,8 @@ static Pipe *gs_pipe_get(const PKey *k, VStage *vs, VStage *gs, VStage *fs) {
         uint64_t h;
         g_gs_dbg_fs = module_from_glsl(1, "#version 460\nlayout(location = 0) out vec4 o0;\nvoid main() { o0 = vec4(200.0, 0.0, 200.0, 1.0); }\n", "geometry stage debug", &h, NULL);
     }
-    for (GsPipe *q = g_gspipes; q; q = q->next) if (q->gs == gs->id && !memcmp(&q->k, k, sizeof *k)) return q->p;
+    if (gs_off()) return NULL;                     /* the driver faulted on one (gs_create_guarded): the draw is left out */
+    for (GsPipe *q = g_gspipes; q; q = q->next) if (q->gs == gs->id && !memcmp(&q->k, k, sizeof *k)) return q->p->p ? q->p : NULL;
     GsPipe *q = calloc(1, sizeof *q);
     Pipe *p = calloc(1, sizeof *p);
     q->k = *k; q->gs = gs->id; q->p = p;
@@ -1186,10 +1240,11 @@ static Pipe *gs_pipe_get(const PKey *k, VStage *vs, VStage *gs, VStage *fs) {
     g_render_tid = GetCurrentThreadId();
     double ms = pipe_build(p);
     hold_note(H_PIPE_DRAW, tk() - t0); g_pipe_miss++; g_gs_pipes++;
+    q->next = g_gspipes; g_gspipes = q;
+    if (!p->p) return NULL;                        /* the driver faulted (gs_fault_note said so): not in gspipes.bin, the draw is left out */
     printf("nvn_vk: pipeline with a geometry stage made at a draw: stages %u/%u/%u (geometry code %016llx, %d bytes, primitive class %d), %d colour (format %d), depth %d, samples %d: %.1f ms\n",
            k->vs, gs->id, k->fs, (unsigned long long)gs->hb, gs->code_len, gs->gprim, k->ncolor, k->cfmt[0], k->dfmt, k->samples, ms);
     gspipe_append(k, vs, gs, fs);
-    q->next = g_gspipes; g_gspipes = q;
     return p;
 }
 /* Any thread: the compute pipeline of a stage. Returns 1 when this call made it, 2 when it waited for another thread, 0 when it was there. */
@@ -1455,7 +1510,7 @@ static DWORD WINAPI pw_main(void *arg) {
     }
     for (;;) {                                     /* 1b. the pipelines with a geometry stage of earlier runs (gspipes.bin), before the first batch */
         LONG i = InterlockedIncrement(&g_gs_next) - 1;
-        if (i >= g_gs_nrec) break;
+        if (i >= g_gs_nrec || gs_off()) break;     /* gs_off: the driver faulted on one, now or on an earlier start (gs_create_guarded) */
         GsPipeRec *r = &g_gs_rec[i];
         int have = 0;
         EnterCriticalSection(&g_sh_lock);

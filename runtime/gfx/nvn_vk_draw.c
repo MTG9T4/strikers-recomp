@@ -2872,6 +2872,7 @@ static int draw_prepare(unsigned prim) {
     if (R.prog[3] || R.prog[4]) { nvn_vk_missing("a draw with a tessellation stage"); return 0; }      /* the game has no tessellation stage (tests/check_all_shaders.py) */
     if (R.prog[2] && !D.f2.features.geometryShader) { nvn_vk_missing("a draw with a geometry stage on a GPU without geometry shaders"); return 0; }
     if (R.prog[2] && gs_dbg_mode() == 2) return 0;      /* STRIKERS_VK_GS_DEBUG=2: left out */
+    if (R.prog[2] && gs_off()) return 0;           /* the driver faulted making a pipeline with a geometry stage (gs_create_guarded) */
     uint32_t ints = 0, sints = 0;
     for (int i = 0; i < 16 && i < R.nattr; i++) {
         int nf = (int)(R.vattr[i] & 0xff), k = nf >= 0x6D ? nf - 0x6D : (nf - 1) % 12;

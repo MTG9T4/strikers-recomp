@@ -2104,7 +2104,10 @@ int mx_translate(const MxIn *in, MxOut *out) {
             if (e->gs_pass && (unsigned)in->gs_in_prim <= 2) {
                 emit(&h, "int mx_layer = 0, mx_vpi = 0;\n");
                 for (unsigned n = 0; n < 32; n++) if (e->pass_written >> n & 1) emit(&h, "vec4 mx_pa%u = vec4(0.0, 0.0, 0.0, 1.0);\n", n);
-                emit(&h, "#define MX_GS_PASS for (int mx_v = 0; mx_v < %u; mx_v++) { gl_Position = gl_in[mx_v].gl_Position; gl_PointSize = gl_in[mx_v].gl_PointSize;", pass_nv[in->gs_in_prim]);
+                /* the point size only for points: copying it for lines and triangles made glslang declare GeometryPointSize, and
+                 * AMD's Windows driver (amdvlk64 32.0.21045) faulted making the crowd's pipeline with it (0.2.0, 0.2.1) */
+                emit(&h, "#define MX_GS_PASS for (int mx_v = 0; mx_v < %u; mx_v++) { gl_Position = gl_in[mx_v].gl_Position;%s", pass_nv[in->gs_in_prim],
+                     in->gs_in_prim == 0 ? " gl_PointSize = gl_in[mx_v].gl_PointSize;" : "");
                 for (unsigned n = 0; n < 32; n++) if (e->out_attr >> n & 1) {
                     if (e->pass_written >> n & 1) emit(&h, " out_attr%u = mx_pa%u;", n, n);
                     else if (e->in_attr >> n & 1) emit(&h, " out_attr%u = in_attr%u[mx_v];", n, n);
