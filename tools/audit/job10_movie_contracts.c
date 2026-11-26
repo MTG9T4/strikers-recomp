@@ -6,6 +6,7 @@ void register_imports(const ImportDef *d, int n) { (void)d; (void)n; }
 void call_guest(Ctx *c, uint64_t a) { (void)c; (void)a; abort(); }
 void input_mark(const char *s) { (void)s; }
 void os_signal_event(uint64_t k) { (void)k; }
+void os_clear_event(uint64_t k) { (void)k; }
 int fs_host_path(const char *g, char *o, size_t n) { (void)g; (void)o; (void)n; return 0; }
 int fs_pkg_read_whole(const char *g, unsigned char **d, size_t *n) { (void)g; (void)d; (void)n; return 0; }   /* no packaged RomFS here */
 

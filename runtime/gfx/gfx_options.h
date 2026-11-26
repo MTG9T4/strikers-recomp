@@ -35,10 +35,17 @@ typedef struct {
     int ultrawide;           /* 0 off, 1 the window's shape at start, else the aspect x 1000 (2370 = 21:9, 3556 = 32:9) (nvn_vk_draw.c rs_wide; restart) */
     int antialias;           /* 0 off, 1 SMAA 1x on the game's final picture (smaa_present.inc; strikers.ini antialiasing = off|smaa) */
     int fast_forward;        /* holding Tab runs the game this many times faster: 0 off, 2, 3, 4 (default), 8 (display.c) */
+    char language[16];       /* "" automatic (the Windows display language), else a code of pc_languages (nnmisc.c desired_language; restart) */
 } GfxOptions;
+/* The game's 16 languages (its control data's SupportedLanguageFlag is 0xffff), in title-entry order: the code
+ * nn::oe::GetDesiredLanguage returns, the name in the language itself, and the English name. */
+typedef struct { const char *code, *name, *english; } PcLanguage;
+#define PC_LANGUAGE_COUNT 16
 #ifdef __cplusplus
 extern "C" {
 #endif
+extern const PcLanguage pc_languages[PC_LANGUAGE_COUNT];
+const PcLanguage *pc_language(const char *code);   /* the entry of a code (case ignored), or NULL */
 extern const char *const pc_action_names[24];
 void pc_default_keys(int keys[24][3]);
 int pc_parse_key(const char *s);

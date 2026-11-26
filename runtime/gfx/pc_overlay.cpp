@@ -37,6 +37,7 @@ extern "C" int cheats_list(char names[][96], int *on, int max, char *status, siz
 extern "C" void cheats_set(int index, int on);
 extern "C" void *g_guest_main_handle;
 extern "C" int display_fast_forward(void);
+extern "C" const char *oe_language(void);                          /* nnmisc.c: the language the game runs in (read once at start) */
 extern "C" int vk_hdr_available(void);                             /* hdr_present.inc: 1 Windows HDR on, 2 test, 0 none */                         /* display.c: the factor while Tab is held, else 1 */
 
 /* ---- the performance readout (F10, or Settings > Graphics): frames a second, and where a frame's time goes: the game's
@@ -168,6 +169,22 @@ extern "C" int pc_ui_needed(void) {
  * idea only: no art or text of the game is used. Fonts come from Windows (Segoe UI), so nothing extra is shipped. */
 static ImFont *font_title, *font_menu, *font_small, *font_body;
 static float font_scale=1;
+/* Settings > Display > Language shows each language by its own name. Segoe UI has Latin and Cyrillic; the few Chinese,
+ * Japanese and Korean glyphs of those names are merged into the settings font from Windows' own CJK fonts (only those
+ * glyphs, so the atlas stays small). first..last: the code points this font file gives. */
+static void merge_name_glyphs(ImGuiIO &io, const char *windir, const char *file, float size, unsigned first, unsigned last, ImVector<ImWchar> &ranges) {
+    char path[MAX_PATH];snprintf(path,sizeof path,"%s\\Fonts\\%s",windir,file);
+    if(GetFileAttributesA(path)==INVALID_FILE_ATTRIBUTES)return;
+    ImFontGlyphRangesBuilder b;
+    for(int i=0;i<PC_LANGUAGE_COUNT;i++)for(const char *t=pc_languages[i].name;*t;) {
+        unsigned char lead=(unsigned char)*t++;int more=lead>=0xF0?3:lead>=0xE0?2:lead>=0xC0?1:0;unsigned c=more?lead&(0x3Fu>>more):lead;
+        while(more--&&(*t&0xC0)==0x80)c=c<<6|(*t++&0x3F);
+        if(c>=first&&c<=last)b.AddChar((ImWchar)c);
+    }
+    b.BuildRanges(&ranges);if(ranges.Size<2)return;
+    ImFontConfig merge;merge.MergeMode=true;
+    io.Fonts->AddFontFromFileTTF(path,size,&merge,ranges.Data);
+}
 static void load_fonts(ImGuiIO &io, float height) {
     font_scale=height>0?height/1080.0f:1;if(font_scale<0.6f)font_scale=0.6f;
     char windir[MAX_PATH]="C:\\Windows";GetWindowsDirectoryA(windir,MAX_PATH);
@@ -179,7 +196,11 @@ static void load_fonts(ImGuiIO &io, float height) {
         font_title=io.Fonts->AddFontFromFileTTF(bold,96*font_scale);
         font_menu=io.Fonts->AddFontFromFileTTF(bold,54*font_scale);
         font_small=io.Fonts->AddFontFromFileTTF(body,26*font_scale);
-        font_body=io.Fonts->AddFontFromFileTTF(body,19*font_scale);       /* the settings window */
+        static const ImWchar body_ranges[]={0x0020,0x00FF,0x0400,0x04FF,0};      /* Latin-1 and Cyrillic */
+        font_body=io.Fonts->AddFontFromFileTTF(body,19*font_scale,nullptr,body_ranges);       /* the settings window */
+        static ImVector<ImWchar> han,hangul;                                    /* read when the atlas is built */
+        merge_name_glyphs(io,windir,"msyh.ttc",19*font_scale,0x3000,0x9FFF,han);      /* Microsoft YaHei: the Han characters */
+        merge_name_glyphs(io,windir,"malgun.ttf",19*font_scale,0xAC00,0xD7AF,hangul); /* Malgun Gothic: Hangul */
     }
 }
 static const char *release_version(void) {
@@ -387,6 +408,8 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
         info.UseDynamicRendering=true;info.PipelineRenderingCreateInfo.sType=VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         info.PipelineRenderingCreateInfo.colorAttachmentCount=1;info.PipelineRenderingCreateInfo.pColorAttachmentFormats=&ui_format;
         ImGui_ImplVulkan_Init(&info);ImGui_ImplVulkan_CreateFontsTexture();renderer_ready=true;
+        /* the atlas is built and keeps its pixels for a later re-init: the font files (CJK ones are 13-20 MB) can go */
+        static bool fonts_freed;if(!fonts_freed){ImGui::GetIO().Fonts->ClearInputData();fonts_freed=true;}
     }
     ImGui_ImplVulkan_NewFrame();ImGui_ImplWin32_NewFrame();
     ImGuiIO &io=ImGui::GetIO();LARGE_INTEGER now;QueryPerformanceCounter(&now);
@@ -441,7 +464,7 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
         ImGui::Begin("Settings",nullptr,ImGuiWindowFlags_NoCollapse);
         ImGui::PushItemWidth(fminf(420*dpi,width*0.55f));
         ImGui::Text("%.1f fps  |  %.2f ms/frame",io.Framerate,1000.0f/io.Framerate);
-        ImGui::TextWrapped("Resolution, vsync, GPU, monitor and pad layout changes require restart. Save before restarting.");
+        ImGui::TextWrapped("Resolution, vsync, GPU, monitor, language and pad layout changes require restart. Save before restarting.");
         if(ImGui::BeginTabBar("settings")) {
             int select_online=(InterlockedExchange(&group_notification,0)!=0)|pc_settings_tab_take();
             if(ImGui::BeginTabItem("Online",nullptr,select_online?ImGuiTabItemFlags_SetSelected:0)) {
@@ -618,7 +641,32 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
                 if(ImGui::Button("Open the cheats folder")){char dir[MAX_PATH];DWORD n=GetModuleFileNameA(nullptr,dir,MAX_PATH);char *s=n&&n<MAX_PATH?strrchr(dir,'\\'):nullptr;if(s){strcpy(s,"\\cheats");CreateDirectoryA(dir,nullptr);ShellExecuteA(nullptr,"open",dir,nullptr,nullptr,SW_SHOWNORMAL);}}
                 ImGui::EndTabItem();
             }
-            if(ImGui::BeginTabItem("Display")) {
+            bool display_tab=ImGui::BeginTabItem("Display");ui_item("tab Display");
+            if(display_tab) {
+                {   /* the game's language: nnmisc.c desired_language, asked once by the game at start (it loads that language's files) */
+                    const PcLanguage *pick=pc_language(edit.language);
+                    auto label=[](const PcLanguage *l,char *out,size_t n) {      /* own name; non-Latin scripts also in English */
+                        bool latin=true;for(const unsigned char *t=(const unsigned char *)l->name;*t;t++)if(*t>=0xD0)latin=false;
+                        if(latin)snprintf(out,n,"%s",l->name);else snprintf(out,n,"%s (%s)",l->name,l->english);
+                    };
+                    char preview[96];if(pick)label(pick,preview,sizeof preview);else snprintf(preview,sizeof preview,"Automatic (follows Windows)");
+                    if(ImGui::BeginCombo("Language (restart)",preview,ImGuiComboFlags_HeightLarge)) {
+                        if(ImGui::Selectable("Automatic (follows Windows)",!pick))edit.language[0]=0;
+                        if(!pick)ImGui::SetItemDefaultFocus();
+                        for(int i=0;i<PC_LANGUAGE_COUNT;i++) {
+                            char name[96];label(&pc_languages[i],name,sizeof name);ImGui::PushID(i);
+                            if(ImGui::Selectable(name,pick==&pc_languages[i]))snprintf(edit.language,sizeof edit.language,"%s",pc_languages[i].code);
+                            if(pick==&pc_languages[i])ImGui::SetItemDefaultFocus();
+                            ImGui::PopID();
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ui_item("combo Language");
+                    const PcLanguage *now=pc_language(oe_language());char running[96];if(now)label(now,running,sizeof running);else snprintf(running,sizeof running,"%s",oe_language());
+                    ImGui::TextWrapped("The language of the game's menus and text. Automatic follows the Windows display language. The game is in %s now; a change counts from the next start (Save settings, then restart the game).",running);
+                    const char *env=getenv("STRIKERS_LANGUAGE");
+                    if(env&&env[0])ImGui::TextColored(ImVec4(1,0.63f,0.09f,1),"STRIKERS_LANGUAGE=%s is set and wins over this setting.",env);
+                }
                 ImGui::Combo("Window mode",&edit.window_mode,"Windowed\0Borderless fullscreen\0Exclusive fullscreen\0Borderless window\0");
                 {   int uw=edit.ultrawide==1?1:edit.ultrawide==2370?2:edit.ultrawide==3556?3:0;
                     if(ImGui::Combo("Ultrawide (restart)",&uw,"Off (16:9)\0The window's shape\0 21:9\0 32:9\0"))edit.ultrawide=uw==1?1:uw==2?2370:uw==3?3556:0;ui_item("combo Ultrawide");
@@ -684,7 +732,8 @@ extern "C" void pc_ui_draw(void *instance,void *gpu,void *device,unsigned family
         /* Changes to bindings, scaling filter and cap are live; restart fields
          * stay in the pending config and cannot mutate active GPU resources. */
         pc_settings_apply(&edit);
-        if(ImGui::Button("Save settings")) {
+        bool save_pressed=ImGui::Button("Save settings");ui_item("save settings");
+        if(save_pressed) {
             GfxOptions geometry;pc_settings_get(&geometry);
             RECT rc,wr;if(GetClientRect((HWND)display_hwnd(),&rc) && GetWindowRect((HWND)display_hwnd(),&wr) && (GetWindowLongA((HWND)display_hwnd(),GWL_STYLE)&WS_CAPTION)) {
                 edit.width=rc.right;edit.height=rc.bottom;edit.pos_x=wr.left;edit.pos_y=wr.top;edit.position_valid=1;

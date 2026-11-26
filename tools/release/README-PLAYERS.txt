@@ -43,6 +43,8 @@ on for your monitor in Windows' display settings (set peak to your monitor's).
 Settings > Display > Ultrawide (experimental, restart): 21:9, 32:9 or the window's
 shape shows more of the stadium at the sides. The interface is stretched to fit (player
 markers stay on their players); "Centred" keeps its shapes but the markers drift inward.
+Settings > Display > Language (restart): any of the game's 16 languages, Português (Brasil)
+among them; Automatic (the default) follows the Windows display language.
 
 SAVES FROM AN EMULATOR: Settings > Saves lists the Mario Strikers saves of Ryujinx,
 yuzu, Eden and the other yuzu forks on this PC; Choose a file takes any strkrs.save

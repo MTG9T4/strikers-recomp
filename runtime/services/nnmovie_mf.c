@@ -584,10 +584,43 @@ static int is_mf_fourcc_guid(const GUID *g) {         /* {xxxxxxxx-0000-0010-800
 #undef FCC
 #define FCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 
+/* (2026-11-25) A crash report (RX 7800 XT, 0.2.1): the game's movie event thread [game 0x7100ab4d84] woke on a video
+ * decoder's "output available" event after the game had torn its player down, and read through the player pointer it had
+ * just cleared ([player state + 0x20] = 0, read at 0x7100ab4e18 without a check). Every method here works out its events
+ * under the decoder's lock and signalled them after letting go of it, so a Stop / Flush / destructor on the game's main
+ * thread could come in between, and the event arrived after the decoder was stopped. A real decoder signals nothing once
+ * it is stopped (its Stop waits for its thread). So an event is signalled under the lock, and only while the decoder is
+ * alive, started and not flushed since (nothing is offered until Start, see dec_halt). STRIKERS_MOVIE_LATE_SIGNALS=1: the
+ * old way (test). TEST ONLY STRIKERS_MOVIE_TEST_SIGNAL_DELAY=<ms>: every "output available" signal waits that long first,
+ * so a teardown lands in between (the crash's order, on any PC). */
+void os_clear_event(uint64_t key);                    /* os_threads.c */
+/* Stop / Flush / Reset and the destructor also withdraw an "input available" or "output available" signal the game has not
+ * taken yet: a stopped decoder offers nothing, and the game's movie event thread must not wake for a decoder (and a player)
+ * already gone (the crash above, when the signal came before the Stop but the thread ran after the teardown). The format and
+ * error events stay (the player waits for every decoder's format event at a movie's start). Called with the lock held. */
+static void dec_withdraw_events(Dec *d) {
+    static int old_way = -1;
+    if (old_way < 0) { const char *v = getenv("STRIKERS_MOVIE_LATE_SIGNALS"); old_way = v && atoi(v) != 0; }
+    if (old_way || !d->events) return;
+    for (int which = 0; which < 2; which++) { uint64_t ev = rd64(d->events + (uint64_t)which * 8); if (ev) os_clear_event(ev); }
+}
 static void signal_event(Dec *d, int which) {
+    static int old_way = -1, delay = -1;
+    if (old_way < 0) { const char *v = getenv("STRIKERS_MOVIE_LATE_SIGNALS"); old_way = v && atoi(v) != 0; }
+    if (delay < 0) { const char *v = getenv("STRIKERS_MOVIE_TEST_SIGNAL_DELAY"); delay = v ? atoi(v) : 0; }
     if (!d->events) return;
-    uint64_t ev = rd64(d->events + (uint64_t)which * 8);
+    if (delay > 0 && which == 1) Sleep((DWORD)delay);
+    if (old_way) { uint64_t ev = rd64(d->events + (uint64_t)which * 8); if (ev) os_signal_event(ev); return; }
+    EnterCriticalSection(&d->cs);
+    int live = !d->dead && d->started && !d->flushed;
+    uint64_t ev = live ? rd64(d->events + (uint64_t)which * 8) : 0;
     if (ev) os_signal_event(ev);
+    LeaveCriticalSection(&d->cs);
+    if (!live) {
+        static volatile LONG n;
+        if (InterlockedIncrement(&n) <= 20) printf("movie: Decoder(%s): event %d not signalled: the decoder was %s after it was worked out\n",
+                                                   d->is_video ? "video" : "audio", which, d->dead ? "destroyed" : !d->started ? "stopped" : "flushed");
+    }
 }
 
 static void ext_lock(Ext *e) { EnterCriticalSection(&e->cs); }
@@ -1652,6 +1685,7 @@ static void dec_dtor_common(Ctx *c, int deleting) {
             else free(d->mem);
             d->mem = NULL; d->nin = d->nout = 0;
             d->in_n = d->dec_n = d->out_n = 0;
+            dec_withdraw_events(d);
             d->dead = 1;
         }
         dec_unlock(d);
@@ -1801,6 +1835,7 @@ static void dec_halt(Ctx *c, const char *what, int stop) {
     dec_release_all(d);
     d->flushed = 1; d->flushes++;
     if (stop) d->started = 0;
+    dec_withdraw_events(d);                           /* nothing is offered until Start (signal_event) */
     dec_unlock(d);
     dlog(d, "%s: dropped %d decoded frames, voided %d input and %d output indices held by the game", what, queued, held_in, held_out);
     RET(ST_OK);                                       /* no event: nothing is offered until Start */

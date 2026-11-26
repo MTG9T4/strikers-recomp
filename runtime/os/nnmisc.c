@@ -319,20 +319,26 @@ static void settings_CodeEqualsLanguage(Ctx *c) {         /* operator==(const La
     settings_LanguageEqualsCode(c);
 }
 /* nn::oe::GetDesiredLanguage: the language the application should use = the system language when the application
- * supports it, otherwise the system's choice among the supported ones. The system language here is the Windows
- * display language of the user. Languages this game ships (its message files): ja, en-US, en-GB, fr, fr-CA, de, it,
- * es, es-419, zh-Hans, zh-Hant, ko, nl, ru; anything else gives en-US (NOT VERIFIED: the console decides from the
- * supported-language mask of the application's control data, which was not read here).
- * STRIKERS_LANGUAGE=<code> overrides (for example STRIKERS_LANGUAGE=en-US). */
+ * supports it, otherwise the system's choice among the supported ones. The application's languages are in its control
+ * data: control.nacp SupportedLanguageFlag (0x302c) is 0xffff for this game, all 16 title-entry languages (bit order
+ * AmericanEnglish, BritishEnglish, Japanese, French, German, LatinAmericanSpanish, Spanish, Italian, Dutch,
+ * CanadianFrench, Portuguese (bit 10), Russian, Korean, TraditionalChinese, SimplifiedChinese, BrazilianPortuguese
+ * (bit 15)); main.elf has the matching region tags, USpt and EUpt among them. gfx_options.c pc_languages lists them.
+ * Which language, first that is set:
+ *   STRIKERS_LANGUAGE=<code>             (for example STRIKERS_LANGUAGE=pt-BR)
+ *   strikers.ini language = <code>       (the PC settings, Display > Language; "auto" = not set)
+ *   the Windows display language of the user, mapped to the nearest of the 16; anything else gives en-US.
+ * Read once: the game asks at start and loads that language's files, so a change counts from the next start. */
 static uint64_t desired_language(void) {
     static uint64_t cached;
-    static const char *const supported[] = {"ja", "en-US", "en-GB", "fr", "fr-CA", "de", "it", "es", "es-419", "zh-Hans", "zh-Hant", "ko", "nl", "ru"};
     if (cached) return cached;
     char name[LOCALE_NAME_MAX_LENGTH * 3] = "", pick[16] = "en-US";
-    const char *env = getenv("STRIKERS_LANGUAGE");
+    const char *env = getenv("STRIKERS_LANGUAGE"), *from = "Windows display language";
+    const char *ini = gfx_options()->language;
     wchar_t wname[LOCALE_NAME_MAX_LENGTH] = L"";
     ULONG count = 0, size = 0;
-    if (env && env[0]) snprintf(name, sizeof name, "%s", env);
+    if (env && env[0]) { snprintf(name, sizeof name, "%s", env); from = "STRIKERS_LANGUAGE"; }
+    else if (ini[0]) { snprintf(name, sizeof name, "%s", ini); from = "strikers.ini language"; }
     else {
         /* the display language of the user interface, not the regional format */
         wchar_t list[512];
@@ -341,21 +347,23 @@ static uint64_t desired_language(void) {
         else GetUserDefaultLocaleName(wname, LOCALE_NAME_MAX_LENGTH);
         WideCharToMultiByte(CP_UTF8, 0, wname, -1, name, sizeof name, NULL, NULL);
     }
-    int exact = 0;
-    for (size_t i = 0; i < sizeof supported / sizeof supported[0]; i++) if (!_stricmp(name, supported[i])) { strcpy(pick, supported[i]); exact = 1; }
-    if (!exact) {
+    const PcLanguage *exact = pc_language(name);
+    if (exact) strcpy(pick, exact->code);
+    else {
         if (!_strnicmp(name, "zh", 2)) strcpy(pick, strstr(name, "TW") || strstr(name, "HK") || strstr(name, "MO") || strstr(name, "Hant") ? "zh-Hant" : "zh-Hans");
         else if (!_strnicmp(name, "en", 2)) strcpy(pick, !_stricmp(name, "en-US") || !_stricmp(name, "en-CA") ? "en-US" : "en-GB");
         else if (!_strnicmp(name, "fr", 2)) strcpy(pick, !_stricmp(name, "fr-CA") ? "fr-CA" : "fr");
         else if (!_strnicmp(name, "es", 2)) strcpy(pick, !_stricmp(name, "es-ES") || !_stricmp(name, "es") ? "es" : "es-419");
+        else if (!_strnicmp(name, "pt", 2)) strcpy(pick, !_stricmp(name, "pt-BR") ? "pt-BR" : "pt");   /* pt-PT, pt-AO, ... */
         else {
             char two[3] = {name[0], name[1], 0};
-            for (size_t i = 0; i < sizeof supported / sizeof supported[0]; i++) if (!_stricmp(two, supported[i])) strcpy(pick, supported[i]);
+            const PcLanguage *l = pc_language(two);
+            if (l) strcpy(pick, l->code);
         }
     }
     uint64_t v = 0;
     memcpy(&v, pick, strlen(pick));
-    printf("nn::oe::GetDesiredLanguage: Windows display language \"%s\" -> \"%s\"\n", name, pick);
+    printf("nn::oe::GetDesiredLanguage: %s \"%s\" -> \"%s\"\n", from, name, pick);
     cached = v;
     return v;
 }

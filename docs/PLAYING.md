@@ -100,6 +100,9 @@ the folder you extracted the release ZIP to.
   stadium at the sides, at 21:9, 32:9 or the window's shape. The interface is
   stretched to fit (player markers stay exact) or centred at 16:9 (markers
   drift inward).
+- **Language:** Display > **Language** (restart) picks any of the game's 16
+  languages, Português (Brasil) among them. **Automatic**, the default, follows
+  the Windows display language.
 - **HDR10:** turn on HDR in Windows' display settings first, then Graphics >
   **HDR**. Set **peak brightness** to your monitor's; **paper white** sets how
   bright the picture's whites are.

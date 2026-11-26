@@ -56,6 +56,9 @@ static const char *const k_default_ini =
 "profile = custom\r\n"
 "unfocused = run\r\n"
 "frame_time_overlay = off\r\n"
+"; language: auto (the Windows display language) | en-US | en-GB | ja | fr | de | es-419 | es | it | nl | fr-CA | pt | ru | ko\r\n"
+"; | zh-Hant | zh-Hans | pt-BR. Used from the next start. STRIKERS_LANGUAGE=<code> wins.\r\n"
+"language = auto\r\n"
 "\r\n; mode: internet (Local Wireless rooms on the same network and on the internet) | lan (same network only)\r\n"
 "; | zerotier (a private group: set group_service and group_code, or zerotier_network) | offline\r\n"
 "; room_key: friends who type the same key see only each other's internet rooms; empty = everyone's rooms\r\n"
@@ -166,6 +169,7 @@ static BOOL CALLBACK opt_load(PINIT_ONCE once, PVOID arg, PVOID *ctx) {
         else if (!_stricmp(key, "ultrawide_hud")) o->ultrawide_hud = !_stricmp(val, "centred") || !_stricmp(val, "centered");
         else if (!_stricmp(key, "ultrawide")) o->ultrawide = !_stricmp(val, "window") ? 1 : !strcmp(val, "21:9") ? 2370 : !strcmp(val, "32:9") ? 3556 : !strcmp(val, "16:10") ? 0 : 0;
         else if (!_stricmp(key, "antialiasing")) o->antialias = !_stricmp(val, "smaa");
+        else if (!_stricmp(key, "language")) { const PcLanguage *l = pc_language(val); snprintf(o->language, sizeof o->language, "%s", l ? l->code : ""); if (!l && _stricmp(val, "auto") && val[0]) unknown++; }
         else if (!_stricmp(key, "fast_forward")) { int v = atoi(val); o->fast_forward = v == 2 || v == 3 || v == 4 || v == 8 ? v : 0; }
         else unknown++;
     }
@@ -190,6 +194,30 @@ static BOOL CALLBACK opt_load(PINIT_ONCE once, PVOID arg, PVOID *ctx) {
 const GfxOptions *gfx_options(void) {
     InitOnceExecuteOnce(&g_once, opt_load, NULL, NULL);
     return &g_opt;
+}
+
+/* The game's languages, in title-entry order. Names are UTF-8 (pc_overlay.cpp load_fonts loads the glyphs they need). */
+const PcLanguage pc_languages[PC_LANGUAGE_COUNT] = {
+    {"en-US", "English (US)", "American English"},
+    {"en-GB", "English (UK)", "British English"},
+    {"ja", "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E", "Japanese"},
+    {"fr", "Fran\xC3\xA7" "ais (France)", "French"},
+    {"de", "Deutsch", "German"},
+    {"es-419", "Espa\xC3\xB1ol (Latinoam\xC3\xA9rica)", "Latin American Spanish"},
+    {"es", "Espa\xC3\xB1ol (Espa\xC3\xB1" "a)", "Spanish"},
+    {"it", "Italiano", "Italian"},
+    {"nl", "Nederlands", "Dutch"},
+    {"fr-CA", "Fran\xC3\xA7" "ais (Canada)", "Canadian French"},
+    {"pt", "Portugu\xC3\xAAs (Portugal)", "Portuguese"},
+    {"ru", "\xD0\xA0\xD1\x83\xD1\x81\xD1\x81\xD0\xBA\xD0\xB8\xD0\xB9", "Russian"},
+    {"ko", "\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4", "Korean"},
+    {"zh-Hant", "\xE7\xB9\x81\xE9\xAB\x94\xE4\xB8\xAD\xE6\x96\x87", "Traditional Chinese"},
+    {"zh-Hans", "\xE7\xAE\x80\xE4\xBD\x93\xE4\xB8\xAD\xE6\x96\x87", "Simplified Chinese"},
+    {"pt-BR", "Portugu\xC3\xAAs (Brasil)", "Brazilian Portuguese"},
+};
+const PcLanguage *pc_language(const char *code) {
+    if (code && code[0]) for (int i = 0; i < PC_LANGUAGE_COUNT; i++) if (!_stricmp(code, pc_languages[i].code)) return &pc_languages[i];
+    return NULL;
 }
 
 /* Canonical PC configuration. Legacy device GUID profiles stay owned by SDL. */
@@ -224,6 +252,8 @@ int gfx_options_save(const GfxOptions *o) {
     { static const char *const bp[4] = {"auto", "switch", "xbox", "playstation"}; fprintf(f,"button_pictures = %s\n",bp[o->button_pictures&3]); }
     fprintf(f,"antialiasing = %s\nhdr = %s\nhdr_paper_white = %d\nhdr_peak = %d\n",o->antialias==1?"smaa":"off",o->hdr?"on":"off",o->hdr_paper,o->hdr_peak);
     if(o->fast_forward)fprintf(f,"fast_forward = %d\n",o->fast_forward);else fprintf(f,"fast_forward = off\n");
+    fprintf(f,"; language: auto (the Windows display language) or a code: en-US en-GB ja fr de es-419 es it nl fr-CA pt ru ko zh-Hant zh-Hans pt-BR (next start)\n"
+              "language = %s\n",pc_language(o->language)?pc_language(o->language)->code:"auto");
     for(int a=0;a<24;a++)if(o->keys_set>>a&1)fprintf(f,"key.%s = 0x%02X, 0x%02X, 0x%02X\n",pc_action_names[a],o->keys[a][0],o->keys[a][1],o->keys[a][2]);
     fprintf(f,"\n; mode: internet (Local Wireless rooms on the same network and on the internet) | lan (same network only)\n"
               "; | zerotier (a private group: set group_service and group_code, or zerotier_network) | offline\n"
